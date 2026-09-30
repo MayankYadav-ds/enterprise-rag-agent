@@ -13,6 +13,7 @@ from rag_agent.ingestion.models import (
     PageContent,
     document_id_from_hash,
     sha256_for_file,
+    text_quality_score,
 )
 
 
@@ -54,6 +55,7 @@ def test_page_content_derives_its_character_count() -> None:
     )
 
     assert page.char_count == len("Clean page text")
+    assert page.text_quality == 1.0
 
 
 def test_page_content_rejects_an_incorrect_character_count() -> None:
@@ -79,3 +81,13 @@ def test_document_identifier_rejects_non_sha256_hashes() -> None:
     """The file hash field cannot contain an arbitrary identifier."""
     with pytest.raises(ValueError, match="SHA-256"):
         document_id_from_hash("not-a-hash")
+
+
+def test_text_quality_penalises_known_pdf_extraction_artifacts() -> None:
+    """Broken font mappings cannot look as trustworthy as clean source text."""
+    text = "Readable (cid:123) text\ufffd with a control\x01character."
+    page = PageContent(doc_id="doc_" + "a" * 64, page_number=1, text=text)
+
+    assert 0.0 < page.text_quality < 1.0
+    assert page.text_quality == text_quality_score(text)
+    assert text_quality_score("") == 1.0

@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 _PAGE_NUMBER_PATTERN = re.compile(r"^(?:page\s*)?\d+(?:\s*(?:of|/)\s*\d+)?$", re.IGNORECASE)
 _WHITESPACE_PATTERN = re.compile(r"\s+")
 _HYPHENATED_LINEBREAK_PATTERN = re.compile(r"(?<=[A-Za-z])-\s*\n\s*(?=[a-z])")
+LOW_TEXT_QUALITY_THRESHOLD = 0.9
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,15 +140,26 @@ def _parse_open_document(pdf_document: pymupdf.Document, pdf_path: Path, doc_id:
                     warnings.append(warning)
                     logger.warning("%s", warning.message)
                     continue
-                pages.append(
-                    PageContent(
-                        doc_id=doc_id,
-                        page_number=page_index,
-                        text=cleaned_text,
-                        tables=tables,
-                        headings=headings,
-                    )
+                page_content = PageContent(
+                    doc_id=doc_id,
+                    page_number=page_index,
+                    text=cleaned_text,
+                    tables=tables,
+                    headings=headings,
                 )
+                if page_content.text_quality < LOW_TEXT_QUALITY_THRESHOLD:
+                    warning = ParseWarning(
+                        page_number=page_index,
+                        kind="low_text_quality",
+                        message=(
+                            f"PDF page {page_index} has low text quality "
+                            f"({page_content.text_quality:.3f} < "
+                            f"{LOW_TEXT_QUALITY_THRESHOLD:.3f}); review the source page before use."
+                        ),
+                    )
+                    warnings.append(warning)
+                    logger.warning("%s", warning.message)
+                pages.append(page_content)
     except PdfEncryptedError:
         raise
     except Exception as error:

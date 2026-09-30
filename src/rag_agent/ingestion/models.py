@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from datetime import UTC, datetime
 from hashlib import sha256
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+_CID_ARTIFACT_PATTERN = re.compile(r"\(cid:\d+\)")
 
 
 def document_id_from_hash(file_hash: str) -> str:
@@ -55,16 +59,40 @@ class PageContent(BaseModel):
     tables: list[str] = Field(default_factory=list)
     headings: list[str] = Field(default_factory=list)
     char_count: int = Field(default=0, ge=0)
+    text_quality: float = Field(default=1.0, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
-    def set_char_count(self) -> PageContent:
-        """Make the recorded character count agree with the cleaned text."""
+    def set_derived_fields(self) -> PageContent:
+        """Derive text length and quality consistently from the stored page text."""
         expected_count = len(self.text)
         if self.char_count not in (0, expected_count):
             msg = "char_count must equal the length of text"
             raise ValueError(msg)
         self.char_count = expected_count
+        self.text_quality = text_quality_score(self.text)
         return self
+
+
+def text_quality_score(text: str) -> float:
+    """Score extracted text from 0 to 1, penalising known PDF decoding artifacts.
+
+    A score of 1.0 has no known artifacts. The score counts characters in
+    ``(cid:N)`` sequences, literal replacement characters, and Unicode control
+    characters. Newlines and tabs are excluded because they are valid layout
+    whitespace before the parser normalises a page.
+    """
+    if not text:
+        return 1.0
+    cid_artifact_characters = sum(
+        match.end() - match.start() for match in _CID_ARTIFACT_PATTERN.finditer(text)
+    )
+    replacement_characters = text.count("\ufffd")
+    control_characters = sum(
+        unicodedata.category(character).startswith("C") and character not in "\n\r\t"
+        for character in text
+    )
+    artifact_characters = cid_artifact_characters + replacement_characters + control_characters
+    return round(max(0.0, 1.0 - artifact_characters / len(text)), 6)
 
 
 def sha256_for_file(path: str) -> str:

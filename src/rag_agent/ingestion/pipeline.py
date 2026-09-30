@@ -69,6 +69,15 @@ class DirectoryIngestionResult:
         """Return non-fatal parsing warnings observed in this run."""
         return sum(len(record.warnings) for record in self.records)
 
+    @property
+    def low_quality_page_count(self) -> int:
+        """Return the number of parsed pages below the configured text-quality threshold."""
+        return sum(
+            warning.kind == "low_text_quality"
+            for record in self.records
+            for warning in record.warnings
+        )
+
 
 def ingest_pdf(
     path: Path, output_dir: Path = Path("data/processed")

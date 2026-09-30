@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from rag_agent.ingestion import pdf_parser
 from rag_agent.ingestion.exceptions import PdfCorruptError
 from rag_agent.ingestion.pdf_parser import _remove_repeated_edges, _TextBlock, clean_text, parse_pdf
 
@@ -79,3 +80,25 @@ def test_parser_does_not_emit_single_column_prose_as_a_table() -> None:
     from rag_agent.ingestion.pdf_parser import _is_usable_table
 
     assert not _is_usable_table([["A paragraph inside a border."], ["Still prose."]])
+
+
+def test_clean_text_preserves_a_registered_sign() -> None:
+    """Regression: the NPS trademark glyph is U+00AE, not U+FFFD."""
+    text = "Sensipar®/Mimpara®"
+
+    assert clean_text(text) == text
+    assert "\ufffd" not in clean_text(text)
+
+
+def test_parser_warns_when_a_page_has_low_text_quality(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Known font-decoding artifacts become a warning instead of silent retrieval input."""
+    low_quality_block = _TextBlock(36, 120, 500, 144, "Readable " + "\x01" * 40, (10,), False)
+    monkeypatch.setattr(pdf_parser, "_extract_text_blocks", lambda page: [low_quality_block])
+
+    parsed = parse_pdf(FIXTURE_PATH, DOC_ID)
+
+    quality_warnings = [
+        warning for warning in parsed.warnings if warning.kind == "low_text_quality"
+    ]
+    assert [warning.page_number for warning in quality_warnings] == [1, 2]
+    assert all(page.text_quality < pdf_parser.LOW_TEXT_QUALITY_THRESHOLD for page in parsed.pages)

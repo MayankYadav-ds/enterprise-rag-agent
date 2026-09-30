@@ -34,12 +34,13 @@ def main() -> int:
     elapsed = perf_counter() - started_at
     logger.info(
         "Summary: %d processed, %d skipped, %d failed; %d PDF pages, %d tables, "
-        "%d warnings in %.2fs.",
+        "%d low-quality pages, %d warnings in %.2fs.",
         result.processed_count,
         result.skipped_count,
         result.failed_count,
         result.page_count,
         result.table_count,
+        result.low_quality_page_count,
         result.warning_count,
         elapsed,
     )

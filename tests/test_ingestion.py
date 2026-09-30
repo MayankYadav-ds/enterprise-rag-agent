@@ -39,6 +39,7 @@ def test_ingest_directory_skips_an_already_processed_file(tmp_path: Path) -> Non
 
     assert first_run.processed_count == 1
     assert first_run.skipped_count == 0
+    assert first_run.low_quality_page_count == 0
     assert second_run.processed_count == 0
     assert second_run.skipped_count == 1
     assert first_run.records[0].document.doc_id == second_run.records[0].document.doc_id
