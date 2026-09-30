@@ -73,9 +73,9 @@ Put legally usable PDFs under `data/raw/` (this directory is deliberately Git-ig
 python scripts/ingest.py --input data/raw --output data/processed
 ```
 
-The command logs processed, skipped, failed, page, table, and warning totals. It writes one JSON file per source hash in `data/processed/`; repeating the command skips files with an existing hash, so re-ingestion is idempotent. Each retained page uses the physical PDF page index starting at 1, which is the citation convention for later phases. See [data/README.md](data/README.md) for public sources and download instructions.
+The command logs processed, skipped, failed, page, table, low-text-quality-page, and warning totals. It writes one JSON file per source hash in `data/processed/`; repeating the command skips files with an existing hash, so re-ingestion is idempotent. Each retained page uses the physical PDF page index starting at 1, which is the citation convention for later phases. See [data/README.md](data/README.md) for public sources and download instructions.
 
-The ingestion parser uses PyMuPDF for positioned text and typography, and pdfplumber for ruled tables. It normalises whitespace and hyphenated line breaks, records headings, removes frequent edge headers/footers and standalone printed page numbers, and logs image-only pages instead of silently pretending OCR succeeded.
+The ingestion parser uses PyMuPDF for positioned text and typography, and pdfplumber for ruled tables. It normalises whitespace and hyphenated line breaks, records headings, removes frequent edge headers/footers and standalone printed page numbers, and logs image-only pages instead of silently pretending OCR succeeded. It also scores page text from 0 to 1; scores below 0.900 warn about extraction artifacts such as `(cid:N)` tokens, literal U+FFFD, or control characters.
 
 ## API example
 

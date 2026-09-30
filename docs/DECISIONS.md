@@ -41,3 +41,11 @@ PyMuPDF provides fast page access, positioned text blocks, span font sizes, font
 Every `PageContent.page_number` is the one-based index of the page in the PDF file. This is deterministic, works for every source, and lets a reader navigate a downloaded source without relying on extracted text. SEC filings can have a cover and contents pages before the report's printed page numbering, so a citation's PDF index can differ from the page number printed on the page.
 
 **Trade-off:** The future UI should make this distinction explicit, for example: "PDF p. 46 (printed p. 46)" when a printed number can be detected safely.
+
+## ADR-006: Flag damaged text instead of silently repairing it
+
+**Status:** accepted (Phase 2)
+
+`PageContent.text_quality` is a deterministic diagnostic score from 0 to 1. It subtracts the share of text occupied by `(cid:N)` extraction tokens, literal U+FFFD characters, and non-whitespace Unicode control characters. A score below 0.900 creates a `low_text_quality` warning and appears in the CLI summary.
+
+**Trade-off:** The score identifies known decoding artifacts, not factual accuracy, reading order, or table structure. It intentionally does not replace unknown glyphs: an unverified replacement can change legal or financial meaning. The N-able validation report flagged 44 of 125 pages, which provides a review signal while an alternate-extractor or OCR fallback is evaluated.
