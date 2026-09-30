@@ -2,7 +2,25 @@
 
 ## Current state
 
-Phase 1 establishes the Python package boundary, configuration conventions, and quality gate. No document content, model, vector database, or HTTP server is implemented yet.
+Phase 2 implements local, page-aware PDF ingestion. The pipeline persists deterministic JSON records in `data/processed/`, which remains outside version control. Vector storage, model calls, and HTTP endpoints are not implemented yet.
+
+## Ingestion flow
+
+```mermaid
+flowchart LR
+    S[PDF in data/raw] --> H[SHA-256 hash]
+    H --> I[Deterministic doc_id]
+    S --> M[PyMuPDF: text, blocks, fonts]
+    M --> O[Reading-order and text cleaning]
+    O --> E[Header/footer frequency filter]
+    S --> T[pdfplumber: ruled table extraction]
+    E --> P[PageContent: PDF page index, text, headings]
+    T --> P
+    P --> J[Hash-named JSON in data/processed]
+    M --> W[Image-only page warning]
+```
+
+`PageContent.page_number` is the one-based physical PDF page index. It deliberately does not attempt to reconcile a filing's printed page number, which can start after cover and contents pages.
 
 ## Target request path
 

@@ -9,3 +9,4 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Added
 
 - Foundation repository scaffold, Python packaging, linting, testing, and CI.
+- Page-aware PDF ingestion with deterministic IDs, local JSON persistence, a CLI, and validation fixtures.

@@ -6,15 +6,15 @@
 
 A production-minded AI research assistant that answers questions across complex documents with page-level, grounded citations.
 
-> **Project status:** foundation complete. Ingestion, retrieval, generation, evaluation, and the demo are built incrementally in documented phases.
+> **Project status:** PDF ingestion is implemented. Retrieval, generation, evaluation, and the demo are built incrementally in documented phases.
 
 ## The problem
 
 Long reports and technical manuals are difficult to search reliably. This project will ingest selected public documents, retrieve the most relevant evidence with both lexical and semantic search, and generate answers only when that evidence is strong enough. Weak retrieval should result in a transparent "I don't have enough evidence" response rather than a confident guess.
 
-## Planned capabilities
+## Capabilities
 
-- Parse PDFs while preserving page, section, table, and source metadata.
+- Parse PDFs while preserving page, heading, table, and source metadata.
 - Compare fixed-size, recursive, and structure-aware chunking.
 - Combine BM25 and dense-vector retrieval with reciprocal-rank fusion and reranking.
 - Stream grounded answers over Server-Sent Events, with document and page citations.
@@ -65,6 +65,18 @@ pytest
 
 Copy `.env.example` to `.env` before configuring a model provider. Do not commit `.env` or API keys.
 
+## Ingest PDFs
+
+Put legally usable PDFs under `data/raw/` (this directory is deliberately Git-ignored), then run:
+
+```bash
+python scripts/ingest.py --input data/raw --output data/processed
+```
+
+The command logs processed, skipped, failed, page, table, and warning totals. It writes one JSON file per source hash in `data/processed/`; repeating the command skips files with an existing hash, so re-ingestion is idempotent. Each retained page uses the physical PDF page index starting at 1, which is the citation convention for later phases. See [data/README.md](data/README.md) for public sources and download instructions.
+
+The ingestion parser uses PyMuPDF for positioned text and typography, and pdfplumber for ruled tables. It normalises whitespace and hyphenated line breaks, records headings, removes frequent edge headers/footers and standalone printed page numbers, and logs image-only pages instead of silently pretending OCR succeeded.
+
 ## API example
 
 The `/ingest`, `/query`, and `/health` endpoints arrive in Phase 7. The final query flow will look like:
@@ -103,7 +115,7 @@ scripts/               Repeatable developer commands
 
 ## Limitations and future work
 
-The current repository intentionally contains only the foundation. Planned phases will add PDF ingestion, vector storage, retrieval, answer generation, evaluation, and a Dockerised UI. OCR quality, table extraction, context-window limits, and model-provider costs will be explicitly tested and documented as the system develops.
+The current repository does not include OCR: image-only/scanned pages are warned about and skipped. PDF font encodings can also produce unreadable glyph mappings, and complex unruled financial tables can split into fragments. Phase 2 validation notes document both observations and the next steps; future work includes OCR, table-region merging, and page-render-based quality checks. Planned phases add vector storage, retrieval, answer generation, evaluation, and a Dockerised UI.
 
 ## Contributing
 
