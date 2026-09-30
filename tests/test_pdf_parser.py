@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from rag_agent.ingestion.exceptions import PdfCorruptError
-from rag_agent.ingestion.pdf_parser import clean_text, parse_pdf
+from rag_agent.ingestion.pdf_parser import _remove_repeated_edges, _TextBlock, clean_text, parse_pdf
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_report.pdf"
 DOC_ID = "doc_" + "a" * 64
@@ -57,3 +57,25 @@ def test_parser_rejects_corrupt_pdf(tmp_path: Path) -> None:
 
     with pytest.raises(PdfCorruptError, match="corrupt or unsupported"):
         parse_pdf(corrupt_file, DOC_ID)
+
+
+def test_repeated_table_of_contents_header_is_removed_but_body_text_remains() -> None:
+    """Regression for the real SEC report's repeated ``Table of Contents`` edge header."""
+    blocks = [
+        _TextBlock(36, 24, 160, 36, "Table of Contents", (10,), False),
+        _TextBlock(36, 120, 500, 144, "Risk-factor body text stays available.", (10,), False),
+    ]
+
+    retained, removed = _remove_repeated_edges(
+        blocks, page_height=792, repeated_edges={"table of contents"}
+    )
+
+    assert removed == ["Table of Contents"]
+    assert [block.text for block in retained] == ["Risk-factor body text stays available."]
+
+
+def test_parser_does_not_emit_single_column_prose_as_a_table() -> None:
+    """A ruled prose callout is not useful table metadata for later retrieval."""
+    from rag_agent.ingestion.pdf_parser import _is_usable_table
+
+    assert not _is_usable_table([["A paragraph inside a border."], ["Still prose."]])

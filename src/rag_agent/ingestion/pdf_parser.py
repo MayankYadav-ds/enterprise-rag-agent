@@ -11,8 +11,8 @@ from math import ceil
 from pathlib import Path
 from typing import Any
 
-import fitz
 import pdfplumber
+import pymupdf
 
 from rag_agent.ingestion.exceptions import PdfCorruptError, PdfEncryptedError, PdfNotFoundError
 from rag_agent.ingestion.models import PageContent
@@ -84,8 +84,8 @@ def parse_pdf(path: Path, doc_id: str) -> ParsedPdf:
         raise PdfNotFoundError(msg)
 
     try:
-        pdf_document = fitz.open(pdf_path)
-    except (fitz.FileDataError, OSError, RuntimeError) as error:
+        pdf_document = pymupdf.open(pdf_path)
+    except (pymupdf.FileDataError, OSError, RuntimeError) as error:
         msg = f"Could not open PDF '{pdf_path}'; it may be corrupt or unsupported."
         raise PdfCorruptError(msg) from error
 
@@ -98,11 +98,9 @@ def parse_pdf(path: Path, doc_id: str) -> ParsedPdf:
         pdf_document.close()
 
 
-def _parse_open_document(pdf_document: fitz.Document, pdf_path: Path, doc_id: str) -> ParsedPdf:
+def _parse_open_document(pdf_document: pymupdf.Document, pdf_path: Path, doc_id: str) -> ParsedPdf:
     """Parse an already-open, unencrypted PyMuPDF document."""
-    pages_and_blocks = [
-        (page, _extract_text_blocks(page)) for page in pdf_document for _ in (None,)
-    ]
+    pages_and_blocks = [(page, _extract_text_blocks(page)) for page in pdf_document]
     repeated_edges = _find_repeated_edge_texts(pages_and_blocks)
     title = _document_title(pdf_document, pdf_path)
     pages: list[PageContent] = []
@@ -165,13 +163,13 @@ def _parse_open_document(pdf_document: fitz.Document, pdf_path: Path, doc_id: st
     )
 
 
-def _document_title(pdf_document: fitz.Document, pdf_path: Path) -> str:
+def _document_title(pdf_document: pymupdf.Document, pdf_path: Path) -> str:
     """Use embedded metadata when available, otherwise derive a readable title."""
     metadata_title = (pdf_document.metadata.get("title") or "").strip()
     return metadata_title or pdf_path.stem.replace("_", " ").replace("-", " ").title()
 
 
-def _extract_text_blocks(page: fitz.Page) -> list[_TextBlock]:
+def _extract_text_blocks(page: pymupdf.Page) -> list[_TextBlock]:
     """Read text spans without trusting source order from complex page layouts."""
     page_dictionary: dict[str, Any] = page.get_text("dict", sort=False)
     blocks: list[_TextBlock] = []
@@ -235,7 +233,7 @@ def _sort_in_reading_order(blocks: list[_TextBlock], page_width: float) -> list[
 
 
 def _find_repeated_edge_texts(
-    pages_and_blocks: list[tuple[fitz.Page, list[_TextBlock]]],
+    pages_and_blocks: list[tuple[pymupdf.Page, list[_TextBlock]]],
 ) -> set[str]:
     """Find top/bottom block strings repeated across a majority of pages."""
     occurrences: dict[str, int] = {}
@@ -315,12 +313,16 @@ def _extract_tables(plumber_page: pdfplumber.page.Page) -> tuple[list[str], str 
         )
     except Exception as error:  # pdfplumber can fail on malformed layout objects.
         return [], f"Could not extract tables on PDF page: {error}"
-    return [markdown_table(table) for table in raw_tables if _has_table_content(table)], None
+    return [markdown_table(table) for table in raw_tables if _is_usable_table(table)], None
 
 
-def _has_table_content(table: list[list[str | None]]) -> bool:
-    """Return whether a pdfplumber table includes at least one non-empty cell."""
-    return any(any(cell and cell.strip() for cell in row) for row in table)
+def _is_usable_table(table: list[list[str | None]]) -> bool:
+    """Reject single-column prose regions that ruled-line detection mistakes for tables."""
+    has_multiple_columns = max((len(row) for row in table), default=0) >= 2
+    has_row_with_multiple_values = any(
+        sum(bool(cell and cell.strip()) for cell in row) >= 2 for row in table
+    )
+    return has_multiple_columns and has_row_with_multiple_values
 
 
 def markdown_table(table: list[list[str | None]]) -> str:
@@ -344,7 +346,7 @@ def _markdown_row(cells: list[str]) -> str:
     return "| " + " | ".join(cells) + " |"
 
 
-def _empty_page_warning(page: fitz.Page, page_number: int) -> ParseWarning:
+def _empty_page_warning(page: pymupdf.Page, page_number: int) -> ParseWarning:
     """Classify an empty page as scanned/image-only when it contains images."""
     if page.get_images(full=True):
         return ParseWarning(
