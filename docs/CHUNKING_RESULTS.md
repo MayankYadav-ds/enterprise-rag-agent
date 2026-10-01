@@ -2,11 +2,12 @@
 
 Comparison of three chunking strategies on real PDF documents.
 
-| Strategy | Chunk Count | Mean Tokens | Median Tokens | P95 Tokens | % Mid-Sentence | Table Chunks | Runtime (s) |
-|----------|-------------|-------------|---------------|------------|----------------|--------------|-------------|
-| fixed_size | 584 | 584.5 | 474.5 | 2269.0 | 26.0% | 35 | 0.31 |
-| recursive | 588 | 580.9 | 475.0 | 2200.0 | 26.7% | 35 | 0.62 |
-| structure_aware | 588 | 580.9 | 475.0 | 2200.0 | 26.7% | 35 | 0.61 |
+| Strat | Chunks | Mean | Med | P95 | %Mid | Tbl | Time |
+|--------|----------|------|------|-----|-------|------|--------|
+|--------|----------|------|------|-----|-------|------|--------|
+| fixed_size | 584 | 584.5 | 474.5 | 2269.0 | 26.0% | 35 | 0.26 |
+| recursive | 598 | 566.1 | 476.5 | 1931.0 | 28.1% | 35 | 0.52 |
+| structure_aware | 532 | 408.2 | 456.5 | 784.0 | 35.5% | 35 | 0.44 |
 
 ## Example Chunks
 

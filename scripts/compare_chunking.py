@@ -105,17 +105,11 @@ def save_results_to_markdown(results: dict, output_path: Path = Path("docs/CHUNK
 
         # Create comparison table
         # Create header line (split to avoid line length issues)
-        header_part1 = (
-            "| Strat | Chunks | Mean | Med | P95 | %Mid | Tbl | Time |\n"
-        )
-        header_part2 = (
-            "|--------|----------|------|------|-----|-------|------|--------|\n"
-        )
+        header_part1 = "| Strat | Chunks | Mean | Med | P95 | %Mid | Tbl | Time |\n"
+        header_part2 = "|--------|----------|------|------|-----|-------|------|--------|\n"
         header = header_part1 + header_part2
         f.write(header)
-        f.write(
-            "|--------|----------|------|------|-----|-------|------|--------|\n"
-        )
+        f.write("|--------|----------|------|------|-----|-------|------|--------|\n")
 
         for strategy_name, metrics in results.items():
             f.write(

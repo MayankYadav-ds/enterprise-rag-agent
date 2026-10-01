@@ -106,8 +106,33 @@ class ChunkingStrategy(ABC):
         current_chunk = splits[0]
 
         for i in range(1, len(splits)):
+            split = splits[i]
+            split_tokens = len(self.tokenizer.encode(split))
+
+            # Handle case where split itself is larger than chunk size
+            if split_tokens > self.chunk_size:
+                # Save current chunk if it has content
+                if (
+                    current_chunk
+                    and len(self.tokenizer.encode(current_chunk)) >= self.min_chunk_size
+                ):
+                    chunks.append(current_chunk)
+
+                # Split the oversized split into chunks
+                # We'll split it by words since we don't have better boundaries
+                words = split.split()
+                word_limit = self.chunk_size // 4
+                for j in range(0, len(words), word_limit):
+                    word_chunk = " ".join(words[j : j + word_limit])
+                    if len(self.tokenizer.encode(word_chunk)) >= self.min_chunk_size:
+                        chunks.append(word_chunk)
+
+                # Start fresh current chunk
+                current_chunk = ""
+                continue  # Skip the normal processing below
+
             # Try to add the next split to current chunk
-            combined = current_chunk + " " + splits[i]
+            combined = current_chunk + " " + split
             if len(self.tokenizer.encode(combined)) <= self.chunk_size:
                 current_chunk = combined
             else:
@@ -117,10 +142,10 @@ class ChunkingStrategy(ABC):
 
                 # Start new chunk with overlap
                 overlap_text = self._get_overlap_text(current_chunk)
-                current_chunk = overlap_text + " " + splits[i] if overlap_text else splits[i]
+                current_chunk = overlap_text + " " + split if overlap_text else split
 
         # Don't forget the last chunk
-        if len(self.tokenizer.encode(current_chunk)) >= self.min_chunk_size:
+        if current_chunk and len(self.tokenizer.encode(current_chunk)) >= self.min_chunk_size:
             chunks.append(current_chunk)
 
         return chunks
@@ -444,16 +469,82 @@ class StructureAwareChunking(ChunkingStrategy):
             if not page.text.strip() and not page.tables:
                 continue
 
-            # Extract headings (lines that are short and possibly uppercase or numbered)
+            # Extract lines from text once
             lines = page.text.split("\n")
-            heading_pattern = re.compile(r"^([A-Z][A-Z\s\d\.\-]+|[\d\.]+\s+[A-Z][A-Z\s\d\.\-]*)$")
 
-            # Find potential headings
+            # Use headings from ingestion if available, otherwise extract from text
             headings = []
-            for i, line in enumerate(lines):
-                line = line.strip()
-                if line and len(line) < 100 and heading_pattern.match(line):
-                    headings.append((i, line))
+            if page.headings:
+                # Use pre-extracted headings from ingestion
+                # Find where each heading appears in the text to create section boundaries
+                text = page.text
+
+                for heading_text in page.headings:
+                    # Find all occurrences of this heading in the text
+                    start_pos = 0
+                    while True:
+                        pos = text.find(heading_text, start_pos)
+                        if pos == -1:
+                            break
+                        # Convert character position to approximate line number
+                        # (count newlines before this position)
+                        line_num = text[:pos].count("\n")
+                        headings.append((line_num, heading_text))
+                        start_pos = pos + 1  # Continue searching after this occurrence
+
+                # Remove duplicates (same heading at same position) and sort by line number
+                headings = list(
+                    dict.fromkeys(headings)
+                )  # Removes duplicates while preserving order
+                headings.sort(key=lambda x: x[0])
+
+                # If we didn't find any headings via substring search, fall back to pattern matching
+                if not headings:
+                    # Fallback: extract headings from text using improved regex patterns
+
+                    # Improved heading patterns that are more inclusive
+                    # Pattern 1: Lines that are mostly uppercase (allowing some
+                    # lowercase/numbers/special chars)
+                    heading_pattern1 = re.compile(r"^[A-Z][A-Z\s\d\.\-,:]+$")
+                    # Pattern 2: Numbered headings like "1. ", "2. ", etc.
+                    heading_pattern2 = re.compile(r"^[\d\.]+\s+[A-Z]")
+                    # Pattern 3: ALL CAPS reasonable length lines
+                    heading_pattern3 = re.compile(r"^[A-Z][A-Z\s\d\.\-]{2,}$")
+
+                    # Find potential headings
+                    for i, line in enumerate(lines):
+                        line = line.strip()
+                        if line and len(line) < 150:  # Increased limit for heading length
+                            # Check if line matches any of our heading patterns
+                            if (
+                                heading_pattern1.match(line)
+                                or heading_pattern2.match(line)
+                                or heading_pattern3.match(line)
+                            ):
+                                headings.append((i, line))
+            else:
+                # Fallback: extract headings from text using improved regex patterns
+
+                # Improved heading patterns that are more inclusive
+                # Pattern 1: Lines that are mostly uppercase (allowing some
+                # lowercase/numbers/special chars)
+                heading_pattern1 = re.compile(r"^[A-Z][A-Z\s\d\.\-,:]+$")
+                # Pattern 2: Numbered headings like "1. ", "2. ", etc.
+                heading_pattern2 = re.compile(r"^[\d\.]+\s+[A-Z]")
+                # Pattern 3: ALL CAPS reasonable length lines
+                heading_pattern3 = re.compile(r"^[A-Z][A-Z\s\d\.\-]{2,}$")
+
+                # Find potential headings
+                for i, line in enumerate(lines):
+                    line = line.strip()
+                    if line and len(line) < 150:  # Increased limit for heading length
+                        # Check if line matches any of our heading patterns
+                        if (
+                            heading_pattern1.match(line)
+                            or heading_pattern2.match(line)
+                            or heading_pattern3.match(line)
+                        ):
+                            headings.append((i, line))
 
             # If we found headings, split by them
             if headings:
