@@ -118,14 +118,13 @@ class ChunkingStrategy(ABC):
                 ):
                     chunks.append(current_chunk)
 
-                # Split the oversized split into chunks
-                # We'll split it by words since we don't have better boundaries
-                words = split.split()
-                word_limit = self.chunk_size // 4
-                for j in range(0, len(words), word_limit):
-                    word_chunk = " ".join(words[j : j + word_limit])
-                    if len(self.tokenizer.encode(word_chunk)) >= self.min_chunk_size:
-                        chunks.append(word_chunk)
+                # Split the oversized split into chunks by character count
+                # Estimate characters needed for target token count (4 chars per token)
+                max_chars = self.chunk_size * 4
+                for j in range(0, len(split), max_chars):
+                    chunk_text = split[j : j + max_chars]
+                    if len(self.tokenizer.encode(chunk_text)) >= self.min_chunk_size:
+                        chunks.append(chunk_text)
 
                 # Start fresh current chunk
                 current_chunk = ""
@@ -350,6 +349,48 @@ class FixedSizeChunking(ChunkingStrategy):
                             else:
                                 current_chunk = sentence
                             current_tokens += sentence_tokens
+
+                    # Handle case where a single sentence exceeds chunk size
+                    if (
+                        current_chunk
+                        and len(self.tokenizer.encode(current_chunk)) > self.chunk_size
+                    ):
+                        # Save current chunk if it meets minimum size
+                        if len(self.tokenizer.encode(current_chunk)) >= self.min_chunk_size:
+                            chunk = Chunk.create(
+                                doc_id=doc_id,
+                                text=current_chunk.strip(),
+                                chunk_type="text",
+                                page_start=page.page_number,
+                                page_end=page.page_number,
+                                chunk_index=chunk_index,
+                                tokenizer=self.tokenizer,
+                            )
+                            chunks.append(chunk)
+                            chunk_index += 1
+
+                        # Split the oversized sentence by characters (estimate 4 chars per token)
+                        max_chars = self.chunk_size * 4
+                        sentence_text = current_chunk
+                        current_chunk = ""
+                        for j in range(0, len(sentence_text), max_chars):
+                            chunk_text = sentence_text[j : j + max_chars]
+                            if len(self.tokenizer.encode(chunk_text)) >= self.min_chunk_size:
+                                chunk = Chunk.create(
+                                    doc_id=doc_id,
+                                    text=chunk_text.strip(),
+                                    chunk_type="text",
+                                    page_start=page.page_number,
+                                    page_end=page.page_number,
+                                    chunk_index=chunk_index,
+                                    tokenizer=self.tokenizer,
+                                )
+                                chunks.append(chunk)
+                                chunk_index += 1
+
+                        # Start fresh current chunk
+                        current_chunk = ""
+                        current_tokens = 0
 
                     # Don't forget the last chunk on the page
                     if (
