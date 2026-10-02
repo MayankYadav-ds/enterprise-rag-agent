@@ -5,13 +5,14 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 
 import pytest
-from src.rag_agent.chunking import (
+
+from rag_agent.chunking import (
     FixedSizeChunking,
     RecursiveChunking,
     StructureAwareChunking,
 )
-from src.rag_agent.chunking.models import Chunk
-from src.rag_agent.ingestion.models import PageContent
+from rag_agent.chunking.models import Chunk
+from rag_agent.ingestion.models import PageContent
 
 
 def create_test_pages() -> list[PageContent]:
@@ -212,3 +213,176 @@ def test_low_quality_page_exclusion():
     for chunk in chunks:
         assert chunk.page_start == 1
         assert chunk.page_end == 1
+
+
+def test_no_text_chunk_exceeds_max_size():
+    """Test that no text chunk exceeds the configured max token size."""
+    # Create a valid doc_id (64 hex chars after "doc_")
+    valid_doc_id = "doc_" + "a" * 64
+
+    # Create pages with very long text to test max size enforcement
+    long_text = "This is a sentence. " * 200  # Very long text
+    pages = [
+        PageContent(
+            doc_id=valid_doc_id,
+            page_number=1,
+            text=long_text,
+            tables=[],
+            headings=[],
+            char_count=0,
+            text_quality=1.0,
+        )
+    ]
+    test_doc_id = pages[0].doc_id
+
+    # Test each strategy with chunk_size=512
+    strategies = [
+        ("fixed_size", FixedSizeChunking(chunk_size=512, chunk_overlap=50)),
+        ("recursive", RecursiveChunking(chunk_size=512, chunk_overlap=50)),
+        ("structure_aware", StructureAwareChunking(chunk_size=512, chunk_overlap=50)),
+    ]
+
+    for name, strategy in strategies:
+        chunks = strategy.chunk(pages, test_doc_id)
+        text_chunks = [c for c in chunks if c.chunk_type == "text"]
+
+        # Verify no text chunk exceeds max size
+        for chunk in text_chunks:
+            assert (
+                chunk.token_count <= 512
+            ), f"{name} produced chunk with {chunk.token_count} tokens (max: 512)"
+
+
+def test_structure_aware_sets_section_heading():
+    """Test that structure_aware strategy sets section_heading from PageContent.headings."""
+    valid_doc_id = "doc_" + "a" * 64
+
+    # Create page with headings in metadata - include the heading in the text so it can be found
+    pages = [
+        PageContent(
+            doc_id=valid_doc_id,
+            page_number=1,
+            text=(
+                "ITEM 1A RISK FACTORS\n\nThis is some text under the heading.\n\n"
+                "More content here."
+            ),
+            tables=[],
+            headings=["ITEM 1A RISK FACTORS"],
+            char_count=0,
+            text_quality=1.0,
+        )
+    ]
+    test_doc_id = pages[0].doc_id
+
+    strategy = StructureAwareChunking(chunk_size=512, chunk_overlap=50)
+    chunks = strategy.chunk(pages, test_doc_id)
+
+    # Verify at least one chunk has the section heading set
+    heading_chunks = [c for c in chunks if c.section_heading is not None]
+    assert len(heading_chunks) > 0, "No chunks have section_heading set"
+
+    # Verify the heading is correctly set
+    for chunk in heading_chunks:
+        assert chunk.section_heading == "ITEM 1A RISK FACTORS"
+
+
+def test_split_tables_repeat_header_and_stay_within_max():
+    """Test that split tables repeat the header row and stay within max token size."""
+    valid_doc_id = "doc_" + "a" * 64
+
+    # Create a markdown table that will exceed chunk size when combined with header
+    # Header + separator = ~10 tokens, each row = ~20 tokens
+    # With 512 max, we should fit about 25 rows per chunk
+    table_rows = []
+    for i in range(100):  # 100 rows should definitely require splitting
+        table_rows.append(f"Row{i} | Data{i} | MoreData{i}")
+
+    table_markdown = (
+        "| Header1 | Header2 | Header3 |\n|---------|---------|---------|\n" + "\n".join(table_rows)
+    )
+
+    pages = [
+        PageContent(
+            doc_id=valid_doc_id,
+            page_number=1,
+            text="",
+            tables=[table_markdown],
+            headings=[],
+            char_count=0,
+            text_quality=1.0,
+        )
+    ]
+    test_doc_id = pages[0].doc_id
+
+    strategies = [
+        ("fixed_size", FixedSizeChunking(chunk_size=512, chunk_overlap=50)),
+        ("recursive", RecursiveChunking(chunk_size=512, chunk_overlap=50)),
+        ("structure_aware", StructureAwareChunking(chunk_size=512, chunk_overlap=50)),
+    ]
+
+    for name, strategy in strategies:
+        chunks = strategy.chunk(pages, test_doc_id)
+        table_chunks = [c for c in chunks if c.chunk_type == "table"]
+
+        # Should have multiple chunks due to splitting
+        assert (
+            len(table_chunks) > 1
+        ), f"{name} did not split the large table (got {len(table_chunks)} chunks)"
+
+        # Each chunk should contain the header
+        for chunk in table_chunks:
+            assert "Header1 | Header2 | Header3" in chunk.text
+            assert "---------|---------|---------" in chunk.text
+
+            # Each chunk should be within max size
+            assert (
+                chunk.token_count <= 512
+            ), f"{name} table chunk has {chunk.token_count} tokens (max: 512)"
+
+
+def test_page_start_end_across_page_boundary():
+    """Test that chunks correctly track page_start and page_end across boundaries."""
+    valid_doc_id = "doc_" + "a" * 64
+
+    # Create two pages of text that will create a chunk spanning the boundary
+    pages = [
+        PageContent(
+            doc_id=valid_doc_id,
+            page_number=1,
+            text="This is page one. " * 50,  # About 350 tokens
+            tables=[],
+            headings=[],
+            char_count=0,
+            text_quality=1.0,
+        ),
+        PageContent(
+            doc_id=valid_doc_id,
+            page_number=2,
+            text="This is page two. " * 50,  # About 350 tokens
+            tables=[],
+            headings=[],
+            char_count=0,
+            text_quality=1.0,
+        ),
+    ]
+    test_doc_id = pages[0].doc_id
+
+    # Use a chunk size that will cause boundary crossing
+    strategies = [
+        ("fixed_size", FixedSizeChunking(chunk_size=400, chunk_overlap=50)),
+        ("recursive", RecursiveChunking(chunk_size=400, chunk_overlap=50)),
+    ]
+
+    for _name, strategy in strategies:
+        chunks = strategy.chunk(pages, test_doc_id)
+
+        # Find chunks that span pages
+        boundary_chunks = [c for c in chunks if c.page_start != c.page_end]
+
+        # Should have at least one chunk spanning the boundary
+        # Note: This might not always happen depending on exact token counts,
+        # but we verify the tracking works correctly when it does
+        for chunk in boundary_chunks:
+            assert chunk.page_start == 1
+            assert chunk.page_end == 2
+            assert chunk.chunk_type == "text"

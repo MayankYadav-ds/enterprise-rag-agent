@@ -237,9 +237,12 @@ class ChunkingStrategy(ABC):
 
         for row_line in data_lines:
             row_tokens = len(self.tokenizer.encode(row_line))
+            # Account for newline that will be added before this row
+            # First row doesn't need preceding newline in join
+            newline_tokens = 1 if current_rows else 0
 
             # If adding this row would exceed chunk size, save current chunk and start new one
-            if current_tokens + row_tokens > self.chunk_size and current_rows:
+            if current_tokens + row_tokens + newline_tokens > self.chunk_size and current_rows:
                 # Create chunk with current rows
                 table_content = table_header + "\n" + "\n".join(current_rows)
                 chunk = Chunk.create(
@@ -261,7 +264,7 @@ class ChunkingStrategy(ABC):
             else:
                 # Add row to current chunk
                 current_rows.append(row_line)
-                current_tokens += row_tokens
+                current_tokens += row_tokens + newline_tokens
 
         # Don't forget the last chunk
         if current_rows:
@@ -299,8 +302,8 @@ class FixedSizeChunking(ChunkingStrategy):
         chunk_index = 0
 
         for page in pages:
-            # Skip low-quality pages
-            if self._is_low_quality(page.text):
+            # Skip low-quality pages if they have no tables
+            if self._is_low_quality(page.text) and not page.tables:
                 continue
 
             # Skip pages with no text and no tables
@@ -440,8 +443,8 @@ class RecursiveChunking(ChunkingStrategy):
         chunk_index = 0
 
         for page in pages:
-            # Skip low-quality pages
-            if self._is_low_quality(page.text):
+            # Skip low-quality pages if they have no tables
+            if self._is_low_quality(page.text) and not page.tables:
                 continue
 
             # Skip pages with no text and no tables
@@ -502,8 +505,8 @@ class StructureAwareChunking(ChunkingStrategy):
         chunk_index = 0
 
         for page in pages:
-            # Skip low-quality pages
-            if self._is_low_quality(page.text):
+            # Skip low-quality pages if they have no tables
+            if self._is_low_quality(page.text) and not page.tables:
                 continue
 
             # Skip pages with no text and no tables
@@ -594,24 +597,35 @@ class StructureAwareChunking(ChunkingStrategy):
 
                 # Create sections based on headings
                 sections = []
-                start_idx = 0
 
-                for heading_line, heading_text in headings:
-                    if heading_line > start_idx:
-                        # Text before heading
-                        section_text = "\n".join(lines[start_idx:heading_line]).strip()
-                        if section_text:
-                            sections.append((None, section_text))
-
-                    # Heading itself
-                    sections.append((heading_text, heading_text))
-                    start_idx = heading_line + 1
-
-                # Remaining text after last heading
-                if start_idx < len(lines):
-                    section_text = "\n".join(lines[start_idx:]).strip()
+                # Text before first heading (if any)
+                first_heading_line = headings[0][0]
+                if first_heading_line > 0:
+                    section_text = "\n".join(lines[0:first_heading_line]).strip()
                     if section_text:
                         sections.append((None, section_text))
+
+                # Process each heading with the content that follows it
+                for i, (heading_line, heading_text) in enumerate(headings):
+                    # Determine the end of this section (start of next heading or end of document)
+                    if i + 1 < len(headings):
+                        end_line = headings[i + 1][0]
+                    else:
+                        end_line = len(lines)
+
+                    # Section content is from after this heading to before next heading
+                    section_start_line = heading_line + 1
+                    section_end_line = end_line
+
+                    if section_start_line < section_end_line:
+                        section_text = "\n".join(lines[section_start_line:section_end_line]).strip()
+                        if section_text:
+                            # Include heading with its content
+                            full_section_text = heading_text + "\n\n" + section_text
+                            sections.append((heading_text, full_section_text))
+                    else:
+                        # No content after heading, just the heading itself
+                        sections.append((heading_text, heading_text))
             else:
                 # No headings found, treat whole page as one section
                 sections = [(None, page.text)]
