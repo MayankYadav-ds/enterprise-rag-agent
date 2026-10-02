@@ -15,7 +15,7 @@ Long reports and technical manuals are difficult to search reliably. This projec
 ## Capabilities
 
 - Parse PDFs while preserving page, heading, table, and source metadata.
-- Compare fixed-size, recursive, and structure-aware chunking.
+- Compare fixed-size, recursive, and structure-aware chunking strategies.
 - Combine BM25 and dense-vector retrieval with reciprocal-rank fusion and reranking.
 - Stream grounded answers over Server-Sent Events, with document and page citations.
 - Evaluate retrieval and answer quality using a reproducible gold set and RAGAS.

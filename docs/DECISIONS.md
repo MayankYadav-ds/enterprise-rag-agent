@@ -49,3 +49,17 @@ Every `PageContent.page_number` is the one-based index of the page in the PDF fi
 `PageContent.text_quality` is a deterministic diagnostic score from 0 to 1. It subtracts the share of text occupied by `(cid:N)` extraction tokens, literal U+FFFD characters, and non-whitespace Unicode control characters. A score below 0.900 creates a `low_text_quality` warning and appears in the CLI summary.
 
 **Trade-off:** The score identifies known decoding artifacts, not factual accuracy, reading order, or table structure. It intentionally does not replace unknown glyphs: an unverified replacement can change legal or financial meaning. The N-able validation report flagged 44 of 125 pages, which provides a review signal while an alternate-extractor or OCR fallback is evaluated.
+
+## ADR-007: Chunking strategy selection and configuration
+
+**Status:** accepted (Phase 3)
+
+The project implements three chunking strategies behind a common interface: fixed-size with overlap, recursive (paragraph-sentence-word fallback), and structure-aware (heading-based splitting). All strategies share common rules for table handling, quality filtering, and deterministic ID generation.
+
+**Trade-off:** Fixed-size chunking is fastest and most predictable but may split semantically related content. Recursive chunking preserves more semantic boundaries but can produce variable chunk sizes. Structure-aware chunking respects document structure but requires reliable heading detection. The strategies are made configurable so the optimal approach can be selected based on evaluation results in Phase 8.
+
+Provisional defaults (to be refined in Phase 8):
+- Chunk size: 512 tokens
+- Chunk overlap: 50 tokens
+- Minimum chunk size: 10 tokens
+- Default strategy: fixed_size (for consistency and speed)

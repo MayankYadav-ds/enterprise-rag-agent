@@ -40,6 +40,20 @@ sequenceDiagram
     Model-->>Client: SSE answer tokens and citations
 ```
 
+## Chunking strategies (Phase 3)
+
+Three chunking strategies are implemented behind a common interface:
+
+1. **Fixed-size chunking**: Splits text into chunks of approximately equal token size with configurable overlap
+2. **Recursive chunking**: Attempts to split by paragraph, then sentence, then word boundaries before applying fixed-size merging
+3. **Structure-aware chunking**: First splits by detected headings, then applies recursive chunking within each section
+
+All strategies share common rules:
+- Tables are treated as atomic units when possible, but split by rows with header repetition when exceeding chunk size
+- Pages below a configurable text quality threshold are excluded by default
+- No empty or near-empty chunks are produced
+- Chunk IDs are deterministic based on document ID, position, and content hash
+
 ## Architectural invariants
 
 - Each chunk keeps document identity and page number from ingestion through generation.
