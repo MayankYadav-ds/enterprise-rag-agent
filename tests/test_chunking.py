@@ -136,6 +136,25 @@ def test_chunk_model_creation():
     assert chunk.chunk_index == 0
     assert chunk.section_heading == "Test Section"
     assert chunk.chunk_id.startswith("chunk_doc_abc123_")
+    assert chunk.chunk_id.count("_") >= 4
+
+
+def test_chunk_id_changes_when_text_changes_and_is_stable_on_rerun():
+    """Chunk IDs include a content hash: same inputs match, different text does not."""
+    kwargs = {
+        "doc_id": "doc_abc123",
+        "chunk_type": "text",
+        "page_start": 1,
+        "page_end": 1,
+        "chunk_index": 0,
+    }
+    first = Chunk.create(text="Alpha sentence about risk.", **kwargs)
+    rerun = Chunk.create(text="Alpha sentence about risk.", **kwargs)
+    changed = Chunk.create(text="Alpha sentence about risk was revised.", **kwargs)
+
+    assert first.chunk_id == rerun.chunk_id
+    assert first.chunk_id != changed.chunk_id
+    assert first.chunk_id.split("_")[-1] != changed.chunk_id.split("_")[-1]
 
 
 def test_chunk_model_is_frozen():
@@ -263,8 +282,7 @@ def test_structure_aware_sets_section_heading():
             doc_id=valid_doc_id,
             page_number=1,
             text=(
-                "ITEM 1A RISK FACTORS\n\nThis is some text under the heading.\n\n"
-                "More content here."
+                "ITEM 1A RISK FACTORS\n\nThis is some text under the heading.\n\nMore content here."
             ),
             tables=[],
             headings=["ITEM 1A RISK FACTORS"],
