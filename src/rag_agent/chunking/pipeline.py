@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from dataclasses import replace
 from pathlib import Path
 
 from rag_agent.chunking import (
@@ -12,7 +14,10 @@ from rag_agent.chunking import (
 )
 from rag_agent.chunking.models import Chunk
 from rag_agent.ingestion.models import Document, PageContent
+from rag_agent.ingestion.pdf_parser import LOW_TEXT_QUALITY_THRESHOLD
 from rag_agent.ingestion.pipeline import ingest_pdf
+
+logger = logging.getLogger(__name__)
 
 
 def chunk_document(
@@ -44,23 +49,43 @@ def chunk_document(
     if strategy not in strategy_map:
         raise ValueError(f"Unknown strategy: {strategy}. Choose from {list(strategy_map.keys())}")
 
+    kept_pages, skipped = _exclude_low_quality_pages(pages)
+    if skipped:
+        logger.info(
+            "Excluded %d low-quality page(s) below %.3f for doc %s",
+            skipped,
+            LOW_TEXT_QUALITY_THRESHOLD,
+            document.doc_id,
+        )
+
     chunking_strategy = strategy_map[strategy](chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    chunks = chunking_strategy.chunk(pages, document.doc_id)
+    chunks = chunking_strategy.chunk(kept_pages, document.doc_id)
+    return [_with_source_text_quality(chunk, kept_pages) for chunk in chunks]
 
-    # Update text_quality based on source pages (simplified)
-    for chunk in chunks:
-        # Find overlapping pages and compute average quality
-        overlapping_pages = [
-            page
-            for page in pages
-            if page.page_number >= chunk.page_start and page.page_number <= chunk.page_end
-        ]
-        if overlapping_pages:
-            # Since Chunk is frozen, direct update not possible
-            # For now, we'll note this as a limitation to be addressed
-            pass
 
-    return chunks
+def _exclude_low_quality_pages(pages: list[PageContent]) -> tuple[list[PageContent], int]:
+    """Drop pages whose ingestion quality is below the shared threshold."""
+    kept: list[PageContent] = []
+    skipped = 0
+    for page in pages:
+        if page.text_quality < LOW_TEXT_QUALITY_THRESHOLD:
+            skipped += 1
+            continue
+        kept.append(page)
+    return kept, skipped
+
+
+def _with_source_text_quality(chunk: Chunk, pages: list[PageContent]) -> Chunk:
+    """Copy a frozen chunk with the mean text_quality of overlapping source pages."""
+    overlapping = [
+        page.text_quality
+        for page in pages
+        if chunk.page_start <= page.page_number <= chunk.page_end
+    ]
+    if not overlapping:
+        return chunk
+    mean_quality = sum(overlapping) / len(overlapping)
+    return replace(chunk, text_quality=mean_quality)
 
 
 def chunk_and_save(

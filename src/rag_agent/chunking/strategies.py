@@ -9,6 +9,7 @@ import tiktoken
 
 from rag_agent.chunking.models import Chunk
 from rag_agent.ingestion.models import PageContent
+from rag_agent.ingestion.pdf_parser import LOW_TEXT_QUALITY_THRESHOLD
 
 
 class ChunkingStrategy(ABC):
@@ -40,28 +41,9 @@ class ChunkingStrategy(ABC):
         """
         pass
 
-    def _is_low_quality(self, text: str, threshold: float = 0.9) -> bool:
-        """Check if text quality is below threshold.
-
-        Args:
-            text: Text to check
-            threshold: Quality threshold (0-1)
-
-        Returns:
-            True if text quality is below threshold
-        """
-        if not text:
-            return True
-
-        # Simple quality check based on length and special characters
-        # In a real implementation, we'd reuse the text_quality_score from ingestion
-        special_chars = text.count("�") + len(re.findall(r"\(cid:\d+\)", text))
-        total_chars = len(text)
-        if total_chars == 0:
-            return True
-
-        quality = 1.0 - (special_chars / total_chars)
-        return quality < threshold
+    def _is_low_quality_page(self, page: PageContent) -> bool:
+        """Return True when ingestion scored this page below the shared threshold."""
+        return page.text_quality < LOW_TEXT_QUALITY_THRESHOLD
 
     def _split_text_recursively(self, text: str) -> list[str]:
         """Split text recursively by paragraph, sentence, then word.
@@ -303,7 +285,7 @@ class FixedSizeChunking(ChunkingStrategy):
 
         for page in pages:
             # Skip low-quality pages if they have no tables
-            if self._is_low_quality(page.text) and not page.tables:
+            if self._is_low_quality_page(page):
                 continue
 
             # Skip pages with no text and no tables
@@ -444,7 +426,7 @@ class RecursiveChunking(ChunkingStrategy):
 
         for page in pages:
             # Skip low-quality pages if they have no tables
-            if self._is_low_quality(page.text) and not page.tables:
+            if self._is_low_quality_page(page):
                 continue
 
             # Skip pages with no text and no tables
@@ -506,7 +488,7 @@ class StructureAwareChunking(ChunkingStrategy):
 
         for page in pages:
             # Skip low-quality pages if they have no tables
-            if self._is_low_quality(page.text) and not page.tables:
+            if self._is_low_quality_page(page):
                 continue
 
             # Skip pages with no text and no tables

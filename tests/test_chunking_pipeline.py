@@ -202,3 +202,43 @@ def test_chunk_and_save_creates_output_dir(tmp_path: Path) -> None:
 
         assert output_dir.is_dir()
         assert (output_dir / f"{DOC_ID}_chunks.jsonl").exists()
+
+
+def test_chunk_document_propagates_page_text_quality(caplog: pytest.LogCaptureFixture) -> None:
+    """Chunks inherit source-page quality; pages below 0.900 are excluded and counted."""
+    good_text = ("This is good quality text with proper sentences and enough length. " * 4).strip()
+    mixed_text = ("Readable sentence about operations and cash flow. " * 8) + ("\x01" * 20)
+    bad_text = "\ufffd" * 40
+
+    pages = [
+        PageContent(doc_id=DOC_ID, page_number=1, text=good_text),
+        PageContent(doc_id=DOC_ID, page_number=2, text=mixed_text),
+        PageContent(doc_id=DOC_ID, page_number=3, text=bad_text),
+    ]
+    document = create_test_document()
+    document = document.model_copy(update={"num_pages": 3})
+
+    assert pages[0].text_quality == 1.0
+    assert 0.900 <= pages[1].text_quality < 1.0
+    assert pages[2].text_quality < 0.900
+
+    with caplog.at_level("INFO", logger="rag_agent.chunking.pipeline"):
+        chunks = chunk_document(
+            document=document,
+            pages=pages,
+            strategy="fixed_size",
+            chunk_size=512,
+            chunk_overlap=50,
+        )
+
+    assert any(chunk.page_start == 1 for chunk in chunks)
+    assert any(chunk.page_start == 2 for chunk in chunks)
+    assert all(chunk.page_start != 3 and chunk.page_end != 3 for chunk in chunks)
+
+    page_one_chunks = [chunk for chunk in chunks if chunk.page_start == 1]
+    page_two_chunks = [chunk for chunk in chunks if chunk.page_start == 2]
+    assert page_one_chunks
+    assert page_two_chunks
+    assert all(chunk.text_quality == pages[0].text_quality for chunk in page_one_chunks)
+    assert all(chunk.text_quality == pages[1].text_quality for chunk in page_two_chunks)
+    assert "Excluded 1 low-quality page" in caplog.text
