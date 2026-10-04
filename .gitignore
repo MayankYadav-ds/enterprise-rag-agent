@@ -32,3 +32,6 @@ qdrant_storage/
 # OS
 .DS_Store
 Thumbs.db
+
+# Agent handoff files
+.agent/
