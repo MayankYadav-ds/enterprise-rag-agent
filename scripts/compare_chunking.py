@@ -16,6 +16,7 @@ from rag_agent.chunking import (
     RecursiveChunking,
     StructureAwareChunking,
 )
+from rag_agent.chunking.metrics import chunk_ends_mid_sentence
 from rag_agent.chunking.models import Chunk
 from rag_agent.ingestion.models import PageContent
 
@@ -36,11 +37,8 @@ def load_processed_pages(data_dir: Path) -> list[PageContent]:
 
 
 def ends_mid_sentence(text: str) -> bool:
-    """Check if text ends mid-sentence (doesn't end with ., !, or ?)."""
-    text = text.strip()
-    if not text:
-        return False
-    return text[-1] not in ".!?"
+    """Compatibility wrapper around the shared text-chunk completeness helper."""
+    return chunk_ends_mid_sentence(text)
 
 
 def count_tables_in_chunks(chunks: list[Chunk]) -> int:
@@ -77,7 +75,8 @@ def run_chunking_comparison(data_dir: Path = Path("data/processed")) -> dict:
         # Calculate statistics
         token_counts = [chunk.token_count for chunk in chunks]
         table_chunks = count_tables_in_chunks(chunks)
-        mid_sentence_chunks = sum(1 for chunk in chunks if ends_mid_sentence(chunk.text))
+        text_chunks = [chunk for chunk in chunks if chunk.chunk_type == "text"]
+        mid_sentence_chunks = sum(1 for chunk in text_chunks if chunk_ends_mid_sentence(chunk.text))
 
         results[name] = {
             "chunk_count": len(chunks),
@@ -86,7 +85,7 @@ def run_chunking_comparison(data_dir: Path = Path("data/processed")) -> dict:
             "p95_tokens": (
                 sorted(token_counts)[int(len(token_counts) * 0.95)] if token_counts else 0
             ),
-            "share_mid_sentence": (mid_sentence_chunks / len(chunks) if chunks else 0),
+            "share_mid_sentence": (mid_sentence_chunks / len(text_chunks) if text_chunks else 0),
             "table_chunk_count": table_chunks,
             "runtime_seconds": end_time - start_time,
             "chunks": chunks,  # Store for example output

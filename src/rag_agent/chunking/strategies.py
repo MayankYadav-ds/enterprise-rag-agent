@@ -471,178 +471,136 @@ class RecursiveChunking(ChunkingStrategy):
 
 
 class StructureAwareChunking(ChunkingStrategy):
-    """Structure-aware chunking strategy."""
+    """Structure-aware chunking: split on headings, then recursive merge within sections."""
+
+    _HEADING_PATTERN_UPPER = re.compile(r"^[A-Z][A-Z\s\d.\-,:]+$")
+    _HEADING_PATTERN_NUMBERED = re.compile(r"^[\d.]+\s+[A-Z]")
+    _HEADING_PATTERN_SHORT_CAPS = re.compile(r"^[A-Z][A-Z\s\d.\-]{2,}$")
+
+    def _fallback_heading_positions(self, lines: list[str]) -> list[tuple[int, str]]:
+        """Infer heading lines from uppercase / numbered patterns when metadata is missing."""
+        headings: list[tuple[int, str]] = []
+        for index, raw_line in enumerate(lines):
+            line = raw_line.strip()
+            if not line or len(line) >= 150:
+                continue
+            if (
+                self._HEADING_PATTERN_UPPER.match(line)
+                or self._HEADING_PATTERN_NUMBERED.match(line)
+                or self._HEADING_PATTERN_SHORT_CAPS.match(line)
+            ):
+                headings.append((index, line))
+        return headings
+
+    def _heading_positions(self, page: PageContent, lines: list[str]) -> list[tuple[int, str]]:
+        """Locate ingestion headings in page text, falling back to line patterns."""
+        headings: list[tuple[int, str]] = []
+        if page.headings:
+            text = page.text
+            for heading_text in page.headings:
+                start_pos = 0
+                while True:
+                    pos = text.find(heading_text, start_pos)
+                    if pos == -1:
+                        break
+                    headings.append((text[:pos].count("\n"), heading_text))
+                    start_pos = pos + 1
+            headings = list(dict.fromkeys(headings))
+            headings.sort(key=lambda item: item[0])
+        if not headings:
+            headings = self._fallback_heading_positions(lines)
+        return headings
+
+    def _sections_for_page(self, page: PageContent) -> list[tuple[str | None, str]]:
+        """Build heading/body sections; never emit a heading-only section."""
+        lines = page.text.split("\n")
+        headings = self._heading_positions(page, lines)
+        if not headings:
+            return [(None, page.text)]
+
+        sections: list[tuple[str | None, str]] = []
+        orphan_headings: list[str] = []
+        first_heading_line = headings[0][0]
+        if first_heading_line > 0:
+            preamble = "\n".join(lines[:first_heading_line]).strip()
+            if preamble:
+                sections.append((None, preamble))
+
+        for index, (heading_line, heading_text) in enumerate(headings):
+            end_line = headings[index + 1][0] if index + 1 < len(headings) else len(lines)
+            body = "\n".join(lines[heading_line + 1 : end_line]).strip()
+            if not body:
+                orphan_headings.append(heading_text)
+                continue
+            prefix = "\n\n".join([*orphan_headings, heading_text])
+            orphan_headings.clear()
+            sections.append((heading_text, f"{prefix}\n\n{body}"))
+
+        if orphan_headings:
+            extra = "\n\n".join(orphan_headings)
+            if sections:
+                previous_heading, previous_text = sections[-1]
+                sections[-1] = (previous_heading, f"{previous_text}\n\n{extra}")
+            else:
+                sections.append((orphan_headings[-1], extra))
+        return sections
+
+    def _coalesce_undersized(self, parts: list[str]) -> list[str]:
+        """Merge leftover fragments below min_chunk_size into a neighbour when it still fits."""
+        if not parts:
+            return []
+        coalesced: list[str] = []
+        for part in parts:
+            token_count = len(self.tokenizer.encode(part))
+            if coalesced and token_count < self.min_chunk_size:
+                combined = f"{coalesced[-1]}\n\n{part}"
+                if len(self.tokenizer.encode(combined)) <= self.chunk_size:
+                    coalesced[-1] = combined
+                    continue
+            coalesced.append(part)
+        if len(coalesced) > 1 and len(self.tokenizer.encode(coalesced[0])) < self.min_chunk_size:
+            combined = f"{coalesced[0]}\n\n{coalesced[1]}"
+            if len(self.tokenizer.encode(combined)) <= self.chunk_size:
+                coalesced = [combined, *coalesced[2:]]
+        return [
+            part for part in coalesced if len(self.tokenizer.encode(part)) >= self.min_chunk_size
+        ]
 
     def chunk(self, pages: list[PageContent], doc_id: str) -> list[Chunk]:
-        """Chunk using structure-aware strategy.
-
-        Args:
-            pages: List of PageContent objects
-            doc_id: Document identifier
-
-        Returns:
-            List of Chunk objects
-        """
+        """Chunk using structure-aware strategy."""
         chunks = []
         chunk_index = 0
 
         for page in pages:
-            # Skip low-quality pages if they have no tables
             if self._is_low_quality_page(page):
                 continue
-
-            # Skip pages with no text and no tables
             if not page.text.strip() and not page.tables:
                 continue
 
-            # Extract lines from text once
-            lines = page.text.split("\n")
-
-            # Use headings from ingestion if available, otherwise extract from text
-            headings = []
-            if page.headings:
-                # Use pre-extracted headings from ingestion
-                # Find where each heading appears in the text to create section boundaries
-                text = page.text
-
-                for heading_text in page.headings:
-                    # Find all occurrences of this heading in the text
-                    start_pos = 0
-                    while True:
-                        pos = text.find(heading_text, start_pos)
-                        if pos == -1:
-                            break
-                        # Convert character position to approximate line number
-                        # (count newlines before this position)
-                        line_num = text[:pos].count("\n")
-                        headings.append((line_num, heading_text))
-                        start_pos = pos + 1  # Continue searching after this occurrence
-
-                # Remove duplicates (same heading at same position) and sort by line number
-                headings = list(
-                    dict.fromkeys(headings)
-                )  # Removes duplicates while preserving order
-                headings.sort(key=lambda x: x[0])
-
-                # If we didn't find any headings via substring search, fall back to pattern matching
-                if not headings:
-                    # Fallback: extract headings from text using improved regex patterns
-
-                    # Improved heading patterns that are more inclusive
-                    # Pattern 1: Lines that are mostly uppercase (allowing some
-                    # lowercase/numbers/special chars)
-                    heading_pattern1 = re.compile(r"^[A-Z][A-Z\s\d\.\-,:]+$")
-                    # Pattern 2: Numbered headings like "1. ", "2. ", etc.
-                    heading_pattern2 = re.compile(r"^[\d\.]+\s+[A-Z]")
-                    # Pattern 3: ALL CAPS reasonable length lines
-                    heading_pattern3 = re.compile(r"^[A-Z][A-Z\s\d\.\-]{2,}$")
-
-                    # Find potential headings
-                    for i, line in enumerate(lines):
-                        line = line.strip()
-                        if line and len(line) < 150:  # Increased limit for heading length
-                            # Check if line matches any of our heading patterns
-                            if (
-                                heading_pattern1.match(line)
-                                or heading_pattern2.match(line)
-                                or heading_pattern3.match(line)
-                            ):
-                                headings.append((i, line))
-            else:
-                # Fallback: extract headings from text using improved regex patterns
-
-                # Improved heading patterns that are more inclusive
-                # Pattern 1: Lines that are mostly uppercase (allowing some
-                # lowercase/numbers/special chars)
-                heading_pattern1 = re.compile(r"^[A-Z][A-Z\s\d\.\-,:]+$")
-                # Pattern 2: Numbered headings like "1. ", "2. ", etc.
-                heading_pattern2 = re.compile(r"^[\d\.]+\s+[A-Z]")
-                # Pattern 3: ALL CAPS reasonable length lines
-                heading_pattern3 = re.compile(r"^[A-Z][A-Z\s\d\.\-]{2,}$")
-
-                # Find potential headings
-                for i, line in enumerate(lines):
-                    line = line.strip()
-                    if line and len(line) < 150:  # Increased limit for heading length
-                        # Check if line matches any of our heading patterns
-                        if (
-                            heading_pattern1.match(line)
-                            or heading_pattern2.match(line)
-                            or heading_pattern3.match(line)
-                        ):
-                            headings.append((i, line))
-
-            # If we found headings, split by them
-            if headings:
-                # Sort headings by line number
-                headings.sort(key=lambda x: x[0])
-
-                # Create sections based on headings
-                sections = []
-
-                # Text before first heading (if any)
-                first_heading_line = headings[0][0]
-                if first_heading_line > 0:
-                    section_text = "\n".join(lines[0:first_heading_line]).strip()
-                    if section_text:
-                        sections.append((None, section_text))
-
-                # Process each heading with the content that follows it
-                for i, (heading_line, heading_text) in enumerate(headings):
-                    # Determine the end of this section (start of next heading or end of document)
-                    if i + 1 < len(headings):
-                        end_line = headings[i + 1][0]
-                    else:
-                        end_line = len(lines)
-
-                    # Section content is from after this heading to before next heading
-                    section_start_line = heading_line + 1
-                    section_end_line = end_line
-
-                    if section_start_line < section_end_line:
-                        section_text = "\n".join(lines[section_start_line:section_end_line]).strip()
-                        if section_text:
-                            # Include heading with its content
-                            full_section_text = heading_text + "\n\n" + section_text
-                            sections.append((heading_text, full_section_text))
-                    else:
-                        # No content after heading, just the heading itself
-                        sections.append((heading_text, heading_text))
-            else:
-                # No headings found, treat whole page as one section
-                sections = [(None, page.text)]
-
-            # Chunk each section
-            for heading, section_text in sections:
+            for heading, section_text in self._sections_for_page(page):
                 if not section_text.strip():
                     continue
-
-                # Use recursive chunking within each section
-                splits = self._split_text_recursively(section_text)
-                merged_chunks = self._merge_splits(splits)
-
+                merged_chunks = self._coalesce_undersized(
+                    self._merge_splits(self._split_text_recursively(section_text))
+                )
                 for chunk_text in merged_chunks:
-                    if len(self.tokenizer.encode(chunk_text)) >= self.min_chunk_size:
-                        chunk = Chunk.create(
-                            doc_id=doc_id,
-                            text=chunk_text.strip(),
-                            chunk_type="text",
-                            page_start=page.page_number,
-                            page_end=page.page_number,
-                            section_heading=heading,
-                            chunk_index=chunk_index,
-                            tokenizer=self.tokenizer,
-                        )
-                        chunks.append(chunk)
-                        chunk_index += 1
+                    chunk = Chunk.create(
+                        doc_id=doc_id,
+                        text=chunk_text.strip(),
+                        chunk_type="text",
+                        page_start=page.page_number,
+                        page_end=page.page_number,
+                        section_heading=heading,
+                        chunk_index=chunk_index,
+                        tokenizer=self.tokenizer,
+                    )
+                    chunks.append(chunk)
+                    chunk_index += 1
 
-            # Process tables
-            for _table_idx, table_markdown in enumerate(page.tables):
-                # Process each table, potentially splitting it into multiple chunks if large
+            for table_markdown in page.tables:
                 table_chunks = self._process_table(
                     table_markdown, doc_id, page.page_number, chunk_index
                 )
-
                 for table_chunk in table_chunks:
                     chunks.append(table_chunk)
                     chunk_index += 1
