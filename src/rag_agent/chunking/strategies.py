@@ -7,9 +7,9 @@ from abc import ABC, abstractmethod
 
 import tiktoken
 
+from rag_agent.chunking.config import LOW_TEXT_QUALITY_THRESHOLD
 from rag_agent.chunking.models import Chunk
 from rag_agent.ingestion.models import PageContent
-from rag_agent.chunking.config import LOW_TEXT_QUALITY_THRESHOLD
 
 
 class ChunkingStrategy(ABC):
