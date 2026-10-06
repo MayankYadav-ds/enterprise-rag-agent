@@ -14,7 +14,7 @@ from rag_agent.chunking import (
 )
 from rag_agent.chunking.models import Chunk
 from rag_agent.ingestion.models import Document, PageContent
-from rag_agent.ingestion.pdf_parser import LOW_TEXT_QUALITY_THRESHOLD
+from rag_agent.chunking.config import LOW_TEXT_QUALITY_THRESHOLD
 from rag_agent.ingestion.pipeline import ingest_pdf
 
 logger = logging.getLogger(__name__)
