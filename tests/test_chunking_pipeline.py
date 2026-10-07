@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from rag_agent.chunking.models import Chunk
 from rag_agent.chunking.pipeline import chunk_and_save, chunk_document
 from rag_agent.ingestion.models import Document, PageContent, document_id_from_hash
 
@@ -242,3 +243,37 @@ def test_chunk_document_propagates_page_text_quality(caplog: pytest.LogCaptureFi
     assert all(chunk.text_quality == pages[0].text_quality for chunk in page_one_chunks)
     assert all(chunk.text_quality == pages[1].text_quality for chunk in page_two_chunks)
     assert "Excluded 1 low-quality page" in caplog.text
+
+
+def test_with_source_text_quality_no_overlap() -> None:
+    """Cover the 'no overlapping pages' branch in _with_source_text_quality (line 86)."""
+    from rag_agent.chunking.pipeline import _with_source_text_quality
+
+    doc_id = DOC_ID
+    # Create a chunk with page numbers not present in the pages list
+    chunk = Chunk.create(
+        doc_id=doc_id,
+        text="Some text.",
+        chunk_type="text",
+        page_start=99,
+        page_end=99,
+        chunk_index=0,
+    )
+
+    # Empty pages list → no overlap → returns unchanged
+    result = _with_source_text_quality(chunk, [])
+    assert result is chunk
+    assert result.text_quality == 1.0
+
+    # Pages with different page numbers → no overlap → returns unchanged
+    pages = [
+        PageContent(
+            doc_id=doc_id,
+            page_number=1,
+            text="Page one.",
+            char_count=0,
+            text_quality=0.9,
+        )
+    ]
+    result = _with_source_text_quality(chunk, pages)
+    assert result is chunk
