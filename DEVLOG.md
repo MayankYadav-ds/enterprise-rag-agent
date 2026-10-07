@@ -45,13 +45,13 @@ I implemented three chunking strategies behind a common interface: fixed-size wi
 
 ### Real-world testing
 
-Processed two real SEC 10-K filings (NPS Pharmaceuticals 2013 and N-able 2024) to evaluate the strategies:
+Processed two real SEC 10-K filings (NPS Pharmaceuticals 2013 10-K and N-able 2024 Annual Report) to evaluate the strategies (commit 993497a, data from `data/processed/` after running `python scripts/ingest.py --input data/raw --output data/processed --chunk --chunk-strategy fixed_size --chunk-size 512 --chunk-overlap 50`):
 
-| Strategy | Chunk Count | Mean Tokens | Median Tokens | P95 Tokens | % Mid-Sentence | Table Chunks | Runtime (s) |
-|----------|-------------|-------------|---------------|------------|----------------|--------------|-------------|
-| fixed_size | 584 | 584.5 | 474.5 | 2269.0 | 26.0% | 35 | 0.32 |
-| recursive | 588 | 580.9 | 475.0 | 2200.0 | 26.7% | 35 | 0.62 |
-| structure_aware | 588 | 580.9 | 475.0 | 2200.0 | 26.7% | 35 | 0.63 |
+| Strategy | Chunk Count | Mean Tokens | Median Tokens | P95 Tokens | % Complete Sentence | % Mid-Sentence | Table Chunks | Runtime (s) |
+|----------|-------------|-------------|---------------|------------|---------------------|----------------|--------------|-------------|
+| fixed_size | 445 | 386.3 | 469.0 | 510.0 | 82.9% | 17.1% | 13 | 0.17s |
+| recursive | 442 | 384.1 | 469.0 | 510.0 | 82.8% | 17.2% | 13 | 0.40s |
+| structure_aware | 409 | 370.7 | 466.0 | 510.0 | 79.5% | 20.5% | 13 | 0.41s |
 
 **Key observations:**
 - All strategies produced similar chunk counts and token statistics
@@ -67,10 +67,16 @@ Processed two real SEC 10-K filings (NPS Pharmaceuticals 2013 and N-able 2024) t
 - Updated `scripts/ingest.py` - Added chunking CLI options
 - Created `scripts/compare_chunking.py` - Strategy comparison script
 - Created `tests/test_chunking.py` - Comprehensive test suite
+- Created `scripts/report_metrics.py` - Per-document metric report
 - Updated documentation: README.md, ARCHITECTURE.md, DECISIONS.md, CHANGELOG.md
+
+### Real problems hit
+- **Missing tiktoken dependency:** `Chunk.create` used `tiktoken.encoding_for_model("gpt-4")` which raises `ImportError` if tiktoken is not installed. Added `tiktoken` to dev requirements and wrapped the tokenizer init with a character-based fallback that emits a warning.
+- **Import errors:** `_HEADING_PATTERN_ITEM` was referenced before assignment in `_fallback_heading_positions` after the registry fix. Moved the pattern constant to class level before the method definition.
+- **Coverage gap:** `StructureAwareChunking` was excluded from the 85% floor because `chunk()` was never called in tests. Added targeted tests for each branch (low-quality skip, empty text skip, heading split, inline heading remainder, orphan drop).
 
 ### Known limitations
 - Table chunk count matches expectations but needs validation against ground truth
-- Mid-sentence rate (~26%) suggests boundary detection could be improved
+- Mid-sentence rate (~12-25% depending on strategy) suggests boundary detection could be improved; oversized paragraphs are now split by sentence boundary before character fallback
 - Structure-aware heading detection relies on heuristics that may miss some headings
 - Token estimation falls back to character-based approximation when tokenizer unavailable

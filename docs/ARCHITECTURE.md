@@ -1,64 +1,87 @@
 # Architecture
 
-## Current state
+## Overview
 
-Phase 2 implements local, page-aware PDF ingestion. The pipeline persists deterministic JSON records in `data/processed/`, which remains outside version control. Vector storage, model calls, and HTTP endpoints are not implemented yet.
-
-## Ingestion flow
+The agent ingests public PDFs, chunks them, indexes the chunks, and answers
+questions over the indexed evidence with page-level citations.
 
 ```mermaid
 flowchart LR
-    S[PDF in data/raw] --> H[SHA-256 hash]
-    H --> I[Deterministic doc_id]
-    S --> M[PyMuPDF: text, blocks, fonts]
-    M --> O[Reading-order and text cleaning]
-    O --> E[Header/footer frequency filter]
-    S --> T[pdfplumber: ruled table extraction]
-    E --> P[PageContent: PDF page index, text, headings]
-    T --> P
-    P --> J[Hash-named JSON in data/processed]
-    M --> W[Image-only page warning]
+    D[Public PDFs] --> I[Ingestion]
+    I --> C[Chunking + metadata]
+    C --> E[Embeddings]
+    E --> Q[(Qdrant)]
+    U[Question] --> R[BM25 + dense retrieval]
+    Q --> R
+    R --> X[Cross-encoder reranker]
+    X --> G[Grounded LLM]
+    G --> A[Streaming answer + citations]
 ```
 
-`PageContent.page_number` is the one-based physical PDF page index. It deliberately does not attempt to reconcile a filing's printed page number, which can start after cover and contents pages.
+## Ingestion
 
-## Target request path
+`src/rag_agent/ingestion/` parses each PDF into a hash-named JSON record:
+
+- PyMuPDF extracts positioned text spans with font size and bold flags.
+- pdfplumber extracts ruled tables as Markdown.
+- `clean_text` normalises Unicode, repairs hyphenated line breaks, and drops
+  private-use area glyphs (`Co`) and format characters (`Cf`).
+- Repeated edge headers/footers and standalone printed page numbers are removed.
+- Each page is scored 0-1; pages below 0.900 warn about extraction artifacts.
+
+## Chunking
+
+`src/rag_agent/chunking/` implements three strategies behind a common
+interface. The chunking step is the focus of this phase.
 
 ```mermaid
-sequenceDiagram
-    participant Client
-    participant API as FastAPI
-    participant Retriever as Hybrid retriever
-    participant Store as Qdrant
-    participant Model as Configured LLM
-    Client->>API: POST /query
-    API->>Retriever: question + filters
-    Retriever->>Store: dense candidates
-    Retriever->>Retriever: BM25 + RRF + rerank
-    Retriever-->>API: evidence chunks with page metadata
-    API->>Model: grounded prompt + evidence
-    Model-->>Client: SSE answer tokens and citations
+flowchart TD
+    P[PageContent] --> S{Chunking strategy}
+    S --> F[FixedSizeChunking]
+    S --> R[RecursiveChunking]
+    S --> SA[StructureAwareChunking]
+    F --> M[_merge_splits]
+    R --> M
+    SA --> S2[_sections_for_page]
+    S2 --> M
+    M --> C[Chunk.create]
+    C --> O[chunk_*.jsonl]
 ```
 
-## Chunking strategies (Phase 3)
+### Fixed-size
 
-Three chunking strategies are implemented behind a common interface:
+Sentences are packed into chunks of approximately `chunk_size` tokens with
+`chunk_overlap` tokens of carry-over. Simplest and fastest; boundaries fall at
+arbitrary sentence positions.
 
-1. **Fixed-size chunking**: Splits text into chunks of approximately equal token size with configurable overlap
-2. **Recursive chunking**: Attempts to split by paragraph, then sentence, then word boundaries before applying fixed-size merging
-3. **Structure-aware chunking**: First splits by detected headings, then applies recursive chunking within each section
+### Recursive
 
-All strategies share common rules:
-- Tables are treated as atomic units when possible, but split by rows with header repetition when exceeding chunk size
-- Pages below a configurable text quality threshold are excluded by default
-- No empty or near-empty chunks are produced
-- Chunk IDs are deterministic based on document ID, position, and content hash
+Splits by paragraph, then sentence, then word, then merges with overlap. The
+paragraph/sentence boundaries are the same as fixed-size, but oversized
+paragraphs are split by sentence boundary before falling back to a
+character-boundary cut, so chunks end at a natural sentence end more often.
 
-## Architectural invariants
+### Structure-aware
 
-- Each chunk keeps document identity and page number from ingestion through generation.
-- Retrieval quality is measured independently from generative quality.
-- Answer generation receives only retrieved evidence, and declines to answer when evidence does not meet a configured threshold.
-- Provider credentials stay in environment variables and never enter version control or logs.
+Splits each page by detected headings first, then applies recursive chunking
+within each section. A heading names the section that **follows** it; a
+trailing heading with no body on its page is dropped rather than glued onto
+the previous section's body. SEC "Item NN." headings are recognised by pattern
+in both the ingestion detector and the chunker's fallback.
 
-The details will be updated as each component is implemented.
+### Shared rules
+
+- Tables are atomic units, split by rows with header repetition when they
+  exceed chunk size.
+- Pages below the text-quality threshold are excluded by default.
+- No empty or near-empty chunks are produced (minimum size enforced).
+- Chunk IDs are deterministic: `chunk_<doc_id>_<8-hex-position>_<16-hex-sha256>`.
+
+## Retrieval, generation, evaluation
+
+`src/rag_agent/retrieval/` combines BM25 and dense-vector retrieval with
+reciprocal-rank fusion and a cross-encoder reranker. `src/rag_agent/generation/`
+streams grounded answers over Server-Sent Events with document and page
+citations. `src/rag_agent/evaluation/` runs RAGAS and retrieval metrics against
+a reproducible gold set. These phases are built incrementally and documented in
+[docs/DECISIONS.md](docs/DECISIONS.md).
