@@ -67,7 +67,7 @@ Processed two real SEC 10-K filings (NPS Pharmaceuticals 2013 10-K and N-able 20
 - Updated `scripts/ingest.py` - Added chunking CLI options
 - Created `scripts/compare_chunking.py` - Strategy comparison script
 - Created `tests/test_chunking.py` - Comprehensive test suite
-- Created `scripts/report_metrics.py` - Per-document metric report
+- Created `scripts/report_metrics.py` - Per-document metric report (later merged into `compare_chunking.py`; the standalone script was removed)
 - Created `.agent/diag_mid.py` - scratch diagnostic for mid-sentence chunks (gitignored)
 - Updated documentation: README.md, ARCHITECTURE.md, DECISIONS.md, CHANGELOG.md
 
