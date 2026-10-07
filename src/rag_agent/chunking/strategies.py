@@ -100,13 +100,39 @@ class ChunkingStrategy(ABC):
                 ):
                     chunks.append(current_chunk)
 
-                # Split the oversized split into chunks by character count
-                # Estimate characters needed for target token count (4 chars per token)
-                max_chars = self.chunk_size * 4
-                for j in range(0, len(split), max_chars):
-                    chunk_text = split[j : j + max_chars]
-                    if len(self.tokenizer.encode(chunk_text)) >= self.min_chunk_size:
-                        chunks.append(chunk_text)
+                # Prefer sentence boundaries when splitting an oversized
+                # paragraph: splitting by sentence keeps at least some chunks
+                # complete instead of cutting every chunk at an arbitrary
+                # character offset.
+                _current_chunk = ""
+                sentences = re.split(r"(?<=[.!?])\s+", split)
+                for sentence in sentences:
+                    sentence_tokens = len(self.tokenizer.encode(sentence))
+                    if sentence_tokens > self.chunk_size:
+                        # Single sentence exceeds chunk size; fall back to
+                        # character-boundary splitting.
+                        if _current_chunk:
+                            if len(self.tokenizer.encode(_current_chunk)) >= self.min_chunk_size:
+                                chunks.append(_current_chunk)
+                            _current_chunk = ""
+                        max_chars = self.chunk_size * 4
+                        for j in range(0, len(sentence), max_chars):
+                            chunk_text = sentence[j : j + max_chars]
+                            if len(self.tokenizer.encode(chunk_text)) >= self.min_chunk_size:
+                                chunks.append(chunk_text)
+                    else:
+                        combined = _current_chunk + " " + sentence if _current_chunk else sentence
+                        if len(self.tokenizer.encode(combined)) <= self.chunk_size:
+                            _current_chunk = combined
+                        else:
+                            if len(self.tokenizer.encode(_current_chunk)) >= self.min_chunk_size:
+                                chunks.append(_current_chunk)
+                            _current_chunk = sentence
+                if (
+                    _current_chunk
+                    and len(self.tokenizer.encode(_current_chunk)) >= self.min_chunk_size
+                ):
+                    chunks.append(_current_chunk)
 
                 # Start fresh current chunk
                 current_chunk = ""
@@ -480,11 +506,11 @@ class StructureAwareChunking(ChunkingStrategy):
     # Factors", "Item 7. Management's Discussion"). These are real section
     # headings even when rendered at body font size, so the fallback detector
     # must recognise them by pattern rather than typography.
-    _HEADING_PATTERN_ITEM = re.compile(r"^Item\s+\d+[A-Z]?\.\s+\S", re.IGNORECASE)
+    _HEADING_PATTERN_ITEM = re.compile(r"^Item\s+\d+[A-Z]?\.\s*\S?", re.IGNORECASE)
 
-    def _fallback_heading_positions(self, lines: list[str]) -> list[tuple[int, str]]:
+    def _fallback_heading_positions(self, lines: list[str]) -> list[tuple[int, int, str]]:
         """Infer heading lines from uppercase, numbered, or Item patterns when metadata absent."""
-        headings: list[tuple[int, str]] = []
+        headings: list[tuple[int, int, str]] = []
         for index, raw_line in enumerate(lines):
             line = raw_line.strip()
             if not line or len(line) >= 150:
@@ -495,12 +521,18 @@ class StructureAwareChunking(ChunkingStrategy):
                 or self._HEADING_PATTERN_SHORT_CAPS.match(line)
                 or self._HEADING_PATTERN_ITEM.match(line)
             ):
-                headings.append((index, line))
+                char_offset = raw_line.index(line)
+                headings.append((index, char_offset, line))
         return headings
 
-    def _heading_positions(self, page: PageContent, lines: list[str]) -> list[tuple[int, str]]:
-        """Locate ingestion headings in page text, falling back to line patterns."""
-        headings: list[tuple[int, str]] = []
+    def _heading_positions(self, page: PageContent, lines: list[str]) -> list[tuple[int, int, str]]:
+        """Locate ingestion headings in page text, falling back to line patterns.
+
+        Returns ``(line_index, char_offset, heading_text)`` tuples so the caller
+        can split an inline heading off its own line without losing the text
+        that precedes it on that line.
+        """
+        headings: list[tuple[int, int, str]] = []
         if page.headings:
             text = page.text
             for heading_text in page.headings:
@@ -509,12 +541,26 @@ class StructureAwareChunking(ChunkingStrategy):
                     pos = text.find(heading_text, start_pos)
                     if pos == -1:
                         break
-                    headings.append((text[:pos].count("\n"), heading_text))
+                    line_index = text[:pos].count("\n")
+                    line_start = text.rfind("\n", 0, pos) + 1
+                    char_offset = pos - line_start
+                    headings.append((line_index, char_offset, heading_text))
                     start_pos = pos + 1
             headings = list(dict.fromkeys(headings))
-            headings.sort(key=lambda item: item[0])
+            headings.sort(key=lambda item: (item[0], item[1]))
         if not headings:
-            headings = self._fallback_heading_positions(lines)
+            for line_index, line in enumerate(lines):
+                stripped = line.strip()
+                if not stripped or len(stripped) >= 150:
+                    continue
+                if (
+                    self._HEADING_PATTERN_UPPER.match(stripped)
+                    or self._HEADING_PATTERN_NUMBERED.match(stripped)
+                    or self._HEADING_PATTERN_SHORT_CAPS.match(stripped)
+                    or self._HEADING_PATTERN_ITEM.match(stripped)
+                ):
+                    char_offset = line.index(stripped)
+                    headings.append((line_index, char_offset, stripped))
         return headings
 
     def _sections_for_page(self, page: PageContent) -> list[tuple[str | None, str]]:
@@ -538,15 +584,18 @@ class StructureAwareChunking(ChunkingStrategy):
             if preamble:
                 sections.append((None, preamble))
 
-        for index, (heading_line, heading_text) in enumerate(headings):
+        for index, (heading_line, char_offset, heading_text) in enumerate(headings):
             end_line = headings[index + 1][0] if index + 1 < len(headings) else len(lines)
             # SEC "Item NN." headings are often inline with their body on the
             # same line ("ITEM 1A. Risk Factors. The following information
             # sets forth ..."). Split the heading off its own line and treat
-            # the remainder as the section body.
+            # the remainder as the section body, keeping any text that
+            # precedes the heading on the same line.
             heading_line_text = lines[heading_line]
-            remainder = heading_line_text[len(heading_text) :].strip()
-            body_parts = [remainder] if remainder else []
+            preceding = heading_line_text[:char_offset].strip()
+            remainder = heading_line_text[char_offset + len(heading_text) :].strip()
+            body_parts = [preceding] if preceding else []
+            body_parts.extend([remainder] if remainder else [])
             body_parts.extend(lines[heading_line + 1 : end_line])
             body = "\n".join(body_parts).strip()
             if not body:
