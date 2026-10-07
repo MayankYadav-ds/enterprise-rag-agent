@@ -2,18 +2,42 @@
 
 Comparison of three chunking strategies on real PDF documents.
 
-| Strat | Chunks | Mean | Med | P95 | %Mid | Tbl | Time |
-|--------|----------|------|------|-----|-------|------|--------|
-|--------|----------|------|------|-----|-------|------|--------|
-| fixed_size | 609 | 610.6 | 477.0 | 2200.0 | 28.4% | 35 | 0.26 |
-| recursive | 598 | 566.1 | 479.5 | 1794.0 | 27.8% | 35 | 0.49 |
-| structure_aware | 533 | 407.5 | 456.0 | 784.0 | 35.5% | 35 | 0.41 |
+| Strat | Chunks | Mean | Med | P95 | %OldMid | %NewComp | %NewInd | Tbl | Time |
+|--------|----------|------|------|-----|------------|------------|------------|------|--------|
+| fixed_size | 444 | 386.7 | 469.0 | 510.0 | 17.2% | 82.8% | 82.8% | 13 | 0.17 |
+| recursive | 441 | 384.5 | 469.0 | 510.0 | 17.3% | 82.7% | 82.7% | 13 | 0.40 |
+| structure_aware | 509 | 372.6 | 466.0 | 512.0 | 19.4% | 80.6% | 80.6% | 13 | 0.50 |
+
+## Metric notes
+
+- **%OldMid** is `chunk_ends_mid_sentence` (text does not end in `. ! ?`, optionally followed by a closing quote/paren). Table chunks are excluded.
+- **%NewComp** is `chunk_ends_with_complete_sentence`, the complement of OLD.
+- **%NewInd** is the same metric computed independently by `report_metrics.py` on the same chunks.
+- **OLD and NEW are identical in every row.** `%NewComp = 1 - %OldMid` holds exactly because the two helpers are complements; `%NewInd` matches `%NewComp` to the printed precision. The NEW column is kept as the headline boundary-quality metric; OLD is retained only for continuity with earlier reports.
+
+## Per-document breakdown
+
+### NPS Pharmaceuticals 2013 Form 10-K (104 pages, 0 low-quality pages, 6 tables)
+
+| Strat | Chunks | Mean | Med | P95 | %OldMid | %NewComp | %NewInd | Tbl | Time |
+|--------|----------|------|------|-----|------------|------------|------------|------|--------|
+| fixed_size | 242 | 390.8 | 474.0 | 514.0 | 11.4% | 88.6% | 88.6% | 6 | 0.10 |
+| recursive | 240 | 385.5 | 470.5 | 511.0 | 11.5% | 88.5% | 88.5% | 6 | 0.23 |
+| structure_aware | 296 | 365.6 | 459.5 | 512.0 | 15.5% | 84.5% | 84.5% | 6 | 0.29 |
+
+### N-able 2024 Annual Financial Report (125 pages, 44 low-quality pages, 11 tables)
+
+| Strat | Chunks | Mean | Med | P95 | %OldMid | %NewComp | %NewInd | Tbl | Time |
+|--------|----------|------|------|-----|------------|------------|------------|------|--------|
+| fixed_size | 202 | 381.8 | 466.0 | 508.0 | 24.1% | 75.9% | 75.9% | 7 | 0.07 |
+| recursive | 201 | 383.4 | 466.0 | 509.0 | 24.2% | 75.8% | 75.8% | 7 | 0.19 |
+| structure_aware | 213 | 382.4 | 468.0 | 510.0 | 24.8% | 75.2% | 75.2% | 7 | 0.22 |
 
 ## Example Chunks
 
 ### Text Chunk Example
 
-**Chunk ID**: `chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_71688c38_df0880102655c8db`
+**Chunk ID**: `chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_71688c38_65dc36646be487a5`
 
 **Document ID**: `doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669`
 
@@ -23,7 +47,7 @@ Comparison of three chunking strategies on real PDF documents.
 
 **Section Heading**: N/A
 
-**Token Count**: 469
+**Token Count**: 451
 
 **Text Quality**: 1.0
 
@@ -32,7 +56,7 @@ Comparison of three chunking strategies on real PDF documents.
 **Text Preview**:
 
 ```
-UNITED STATES SECURITIES AND EXCHANGE COMMISSION Washington, D.C. 20549 FORM 10-K  ANNUAL REPORT PURSUANT TO SECTION 13 OR 15(d) OF THE SECURITIES EXCHANGE ACT OF 1934 For the fiscal year ended December 31, 2013 Commission File Number 0-23272 NPS PHARMACEUTICALS, INC. (Exact Name of Registrant as Specified in Its Charter) Delaware 87-0439579 (State or Other jurisdiction of (I.R.S. Employer Incorporation or Organization) Identification No.) 550 Hills Drive, 3rd Floor, Bedminster, New Jersey 0792...
+UNITED STATES SECURITIES AND EXCHANGE COMMISSION Washington, D.C. 20549 FORM 10-K ANNUAL REPORT PURSUANT TO SECTION 13 OR 15(d) OF THE SECURITIES EXCHANGE ACT OF 1934 For the fiscal year ended December 31, 2013 Commission File Number 0-23272 NPS PHARMACEUTICALS, INC. (Exact Name of Registrant as Specified in Its Charter) Delaware 87-0439579 (State or Other jurisdiction of (I.R.S. Employer Incorporation or Organization) Identification No.) 550 Hills Drive, 3rd Floor, Bedminster, New Jersey 07921 ...
 ```
 
 ### Table Chunk Example

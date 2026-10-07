@@ -25,9 +25,13 @@ if tiktoken is unavailable.
 | recursive | medium | medium | none |
 | structure_aware | highest (sentence-split oversized paragraphs) | slower | yes |
 
-Structure-aware is the default for SEC filings because "Item NN."
-headings are real section boundaries; fixed-size/recursive ignore
-them.
+**Recursive is the default.** Structure-aware is NOT claimed to be
+better: on the two real filings it produces more chunks and a higher
+mid-sentence rate than recursive (NPS 15.5% vs 11.5%; N-able 24.8% vs
+24.2%), and its heading-aware splitting is a hypothesis, not a
+verified win. The choice between recursive and structure-aware is
+deferred to Phase 8, when retrieval and answer-quality scores are
+available to judge boundary placement against downstream quality.
 
 ## Heading detection
 
@@ -56,6 +60,7 @@ from chunking by default; their tables are still retained.
 - Unruled multi-year financial tables fragment (NPS page 80). See [#13](https://github.com/MayankYadav-ds/enterprise-rag-agent/issues/13).
 - Superscript footnotes fuse into adjacent values (e.g. `2015¹` becomes `20151`). See [#12](https://github.com/MayankYadav-ds/enterprise-rag-agent/issues/12).
 - Mid-sentence chunk rate is ~12-25% depending on strategy; sentence-boundary splitting reduces it but does not eliminate it for oversized paragraphs.
+- Structure-aware is not better than recursive on the two real filings (NPS 15.5% vs 11.5%, N-able 24.8% vs 24.2%); it also produces more chunks. See [#18](https://github.com/MayankYadav-ds/enterprise-rag-agent/issues/18).
 
 ## Future work
 
