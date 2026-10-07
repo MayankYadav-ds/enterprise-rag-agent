@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -102,3 +103,35 @@ def test_parser_warns_when_a_page_has_low_text_quality(monkeypatch: pytest.Monke
     ]
     assert [warning.page_number for warning in quality_warnings] == [1, 2]
     assert all(page.text_quality < pdf_parser.LOW_TEXT_QUALITY_THRESHOLD for page in parsed.pages)
+
+
+def test_clean_text_drops_private_use_characters() -> None:
+    """Private-use area glyphs carry no visible text and must not reach retrieval."""
+    assert clean_text("AB") == "AB"
+    assert clean_text("wordwordword test") == "wordwordword test"
+    assert all(unicodedata.category(character) != "Co" for character in clean_text("AB"))
+
+
+def test_detect_headings_rejects_long_all_caps_cover_lines() -> None:
+    """Long cover-page titles are not section headings for later chunking."""
+    from rag_agent.ingestion.pdf_parser import _detect_headings
+
+    blocks = [
+        _TextBlock(36, 240, 500, 260, "Body text at normal size.", (11,), False),
+        _TextBlock(36, 300, 500, 320, "More body text at normal size.", (11,), False),
+        _TextBlock(36, 360, 500, 380, "Even more body text at normal size.", (11,), False),
+        _TextBlock(
+            36,
+            120,
+            500,
+            144,
+            "FORM 10-K ANNUAL REPORT PURSUANT TO SECTION 13 OF THE SECURITIES EXCHANGE ACT OF 1934",
+            (30,),
+            False,
+        ),
+        _TextBlock(36, 420, 500, 440, "Financial Overview", (30,), False),
+    ]
+
+    headings = _detect_headings(blocks)
+
+    assert headings == ["Financial Overview"]
