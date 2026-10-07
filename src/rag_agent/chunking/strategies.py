@@ -476,9 +476,14 @@ class StructureAwareChunking(ChunkingStrategy):
     _HEADING_PATTERN_UPPER = re.compile(r"^[A-Z][A-Z\s\d.\-,:]+$")
     _HEADING_PATTERN_NUMBERED = re.compile(r"^[\d.]+\s+[A-Z]")
     _HEADING_PATTERN_SHORT_CAPS = re.compile(r"^[A-Z][A-Z\s\d.\-]{2,}$")
+    # SEC filings label sections with "Item NN. Title" (e.g. "Item 1A. Risk
+    # Factors", "Item 7. Management's Discussion"). These are real section
+    # headings even when rendered at body font size, so the fallback detector
+    # must recognise them by pattern rather than typography.
+    _HEADING_PATTERN_ITEM = re.compile(r"^Item\s+\d+[A-Z]?\.\s+\S", re.IGNORECASE)
 
     def _fallback_heading_positions(self, lines: list[str]) -> list[tuple[int, str]]:
-        """Infer heading lines from uppercase / numbered patterns when metadata is missing."""
+        """Infer heading lines from uppercase, numbered, or Item patterns when metadata absent."""
         headings: list[tuple[int, str]] = []
         for index, raw_line in enumerate(lines):
             line = raw_line.strip()
@@ -488,6 +493,7 @@ class StructureAwareChunking(ChunkingStrategy):
                 self._HEADING_PATTERN_UPPER.match(line)
                 or self._HEADING_PATTERN_NUMBERED.match(line)
                 or self._HEADING_PATTERN_SHORT_CAPS.match(line)
+                or self._HEADING_PATTERN_ITEM.match(line)
             ):
                 headings.append((index, line))
         return headings
@@ -512,14 +518,20 @@ class StructureAwareChunking(ChunkingStrategy):
         return headings
 
     def _sections_for_page(self, page: PageContent) -> list[tuple[str | None, str]]:
-        """Build heading/body sections; never emit a heading-only section."""
+        """Build heading/body sections.
+
+        A heading names the section that FOLLOWS it. Headings with no body on
+        this page (a trailing page-title line, or a heading that is the last
+        line before the next page's content) are dropped rather than glued
+        onto the previous section's body: a heading must never be appended to
+        text it did not introduce.
+        """
         lines = page.text.split("\n")
         headings = self._heading_positions(page, lines)
         if not headings:
             return [(None, page.text)]
 
         sections: list[tuple[str | None, str]] = []
-        orphan_headings: list[str] = []
         first_heading_line = headings[0][0]
         if first_heading_line > 0:
             preamble = "\n".join(lines[:first_heading_line]).strip()
@@ -528,21 +540,21 @@ class StructureAwareChunking(ChunkingStrategy):
 
         for index, (heading_line, heading_text) in enumerate(headings):
             end_line = headings[index + 1][0] if index + 1 < len(headings) else len(lines)
-            body = "\n".join(lines[heading_line + 1 : end_line]).strip()
+            # SEC "Item NN." headings are often inline with their body on the
+            # same line ("ITEM 1A. Risk Factors. The following information
+            # sets forth ..."). Split the heading off its own line and treat
+            # the remainder as the section body.
+            heading_line_text = lines[heading_line]
+            remainder = heading_line_text[len(heading_text) :].strip()
+            body_parts = [remainder] if remainder else []
+            body_parts.extend(lines[heading_line + 1 : end_line])
+            body = "\n".join(body_parts).strip()
             if not body:
-                orphan_headings.append(heading_text)
+                # No body follows this heading on this page; drop it rather
+                # than attaching it to the previous section's text. A heading
+                # is never appended to a section it did not introduce.
                 continue
-            prefix = "\n\n".join([*orphan_headings, heading_text])
-            orphan_headings.clear()
-            sections.append((heading_text, f"{prefix}\n\n{body}"))
-
-        if orphan_headings:
-            extra = "\n\n".join(orphan_headings)
-            if sections:
-                previous_heading, previous_text = sections[-1]
-                sections[-1] = (previous_heading, f"{previous_text}\n\n{extra}")
-            else:
-                sections.append((orphan_headings[-1], extra))
+            sections.append((heading_text, f"{heading_text}\n\n{body}"))
         return sections
 
     def _coalesce_undersized(self, parts: list[str]) -> list[str]:

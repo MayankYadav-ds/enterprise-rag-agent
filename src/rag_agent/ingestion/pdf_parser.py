@@ -315,12 +315,21 @@ def _strip_non_printing_characters(text: str) -> str:
     )
 
 
+_HEADING_PATTERN_ITEM = re.compile(r"^Item\s+\d+[A-Z]?\.\s+\S", re.IGNORECASE)
+# Table column headers ("Years Ended December 31,") and row labels
+# ("2013 2012 2011 2010 2009 (in thousands)") are bold but are not
+# section headings; they are table content.
+_HEADING_PATTERN_TABLE_LABEL = re.compile(r",$|^\d{4}(\s+\d{4})+\s+\(")
+
+
 def _detect_headings(blocks: list[_TextBlock]) -> list[str]:
     """Infer heading blocks from relative font size or bold typography.
 
     Long all-caps lines such as a cover page's ``FORM 10-K ...`` heading are
     rejected: they are page titles, not section headings, and keeping them
     would seed the structure-aware chunker with noisy section boundaries.
+    SEC "Item NN." headings are bold but rendered at body font size, so they
+    are recognised by pattern rather than by font size alone.
     """
     font_sizes = [size for block in blocks for size in block.font_sizes if size > 0]
     if not font_sizes:
@@ -332,12 +341,11 @@ def _detect_headings(blocks: list[_TextBlock]) -> list[str]:
         is_large = block_size >= baseline_size * 1.25
         is_emphasised = block.has_bold_span and block_size > baseline_size
         candidate = clean_text(block.text)
-        if (
-            candidate
-            and (is_large or is_emphasised)
-            and candidate not in headings
-            and len(candidate) <= MAX_HEADING_LENGTH
-        ):
+        if not candidate or candidate in headings or len(candidate) > MAX_HEADING_LENGTH:
+            continue
+        if _HEADING_PATTERN_TABLE_LABEL.match(candidate):
+            continue
+        if is_large or is_emphasised or _HEADING_PATTERN_ITEM.match(candidate):
             headings.append(candidate)
     return headings
 

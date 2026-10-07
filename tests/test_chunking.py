@@ -729,3 +729,74 @@ def test_overlap_text_small():
     chunks = strategy.chunk(pages, valid_doc_id)
     # Should not crash; should produce some chunks
     assert len(chunks) > 0
+
+
+def test_structure_aware_attaches_real_sec_headings_to_following_chunks() -> None:
+    """SEC "Item NN." headings are detected and name the chunks that follow them."""
+    valid_doc_id = "doc_" + "a" * 64
+    body = " ".join(
+        "The following information sets forth risk factors that could cause our actual "
+        "results to differ materially from those contained in forward-looking statements "
+        "we have made in this Annual Report on Form 10-K and those we may make from time "
+        "to time. If any of the following risks actually occur, our business, results of "
+        "operation, prospects or financial condition could be harmed. These are not the "
+        "only risks we face. Additional risks not presently known to us, or that we "
+        "currently deem immaterial, may also affect our business operations, operating "
+        "results and financial condition in future periods. We have described these risks "
+        "in detail throughout this report and we encourage you to read them carefully."
+        for _ in range(4)
+    )
+    pages = [
+        PageContent(
+            doc_id=valid_doc_id,
+            page_number=1,
+            text=f"ITEM 1A. Risk Factors.\n\n{body}",
+            tables=[],
+            headings=["ITEM 1A. Risk Factors."],
+            char_count=0,
+            text_quality=1.0,
+        ),
+    ]
+
+    chunks = StructureAwareChunking(chunk_size=512, chunk_overlap=50).chunk(pages, valid_doc_id)
+
+    assert len(chunks) > 0
+    heading_chunks = [c for c in chunks if c.section_heading == "ITEM 1A. Risk Factors."]
+    assert heading_chunks, "no chunk carries the Item 1A heading"
+    # The heading names the body that FOLLOWS it, so the chunk text is the body
+    # and never contains the heading text itself.
+    for chunk in heading_chunks:
+        assert "ITEM 1A" not in chunk.text
+    assert heading_chunks[0].text.startswith("The following information sets forth risk factors")
+
+
+def test_structure_aware_never_appends_heading_to_previous_section_body() -> None:
+    """A trailing heading with no body on its page is dropped, not glued to the prior section."""
+    valid_doc_id = "doc_" + "a" * 64
+    pages = [
+        PageContent(
+            doc_id=valid_doc_id,
+            page_number=1,
+            text=(
+                "This is a longer preamble before any heading appears. "
+                "It contains enough text to remain as its own section after chunking. "
+                "More sentences here to make this substantial enough.\n\n"
+                "ITEM 1\n\n"
+                "Body of item 1. This provides actual content under the first heading. "
+                "Enough text to be meaningful.\n\n"
+                "ITEM 2"
+            ),
+            tables=[],
+            headings=[],
+            char_count=0,
+            text_quality=1.0,
+        ),
+    ]
+
+    chunks = StructureAwareChunking(chunk_size=512, chunk_overlap=50).chunk(pages, valid_doc_id)
+
+    # The trailing "ITEM 2" has no body on this page, so it must never appear
+    # as a section heading and must never be appended to the previous body.
+    for chunk in chunks:
+        assert chunk.section_heading != "ITEM 2"
+        assert "ITEM 2" not in chunk.text
