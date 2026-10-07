@@ -23,6 +23,9 @@ _PAGE_NUMBER_PATTERN = re.compile(r"^(?:page\s*)?\d+(?:\s*(?:of|/)\s*\d+)?$", re
 _WHITESPACE_PATTERN = re.compile(r"\s+")
 _HYPHENATED_LINEBREAK_PATTERN = re.compile(r"(?<=[A-Za-z])-\s*\n\s*(?=[a-z])")
 LOW_TEXT_QUALITY_THRESHOLD = 0.9
+# Section headings are short, titled lines. Cover-page headings like
+# "FORM 10-K ... ANNUAL REPORT PURSUANT TO ..." are page titles, not sections.
+MAX_HEADING_LENGTH = 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,14 +297,40 @@ def _is_page_number(frequency_key: str) -> bool:
 
 
 def clean_text(text: str) -> str:
-    """Normalise Unicode and whitespace while repairing hyphenated line breaks."""
-    normalized = unicodedata.normalize("NFKC", text).replace("\u00ad", "")
+    """Normalise Unicode and whitespace while repairing hyphenated line breaks.
+
+    Private-use area glyphs (``\\uE000``-``\\uF8FF`` and supplementary planes) and
+    non-printing format characters are dropped: they carry no visible text and
+    would otherwise pollute retrieval tokens and quality scores.
+    """
+    normalized = unicodedata.normalize("NFKC", text)
     repaired = _HYPHENATED_LINEBREAK_PATTERN.sub("", normalized)
-    return _WHITESPACE_PATTERN.sub(" ", repaired).strip()
+    return _WHITESPACE_PATTERN.sub(" ", _strip_non_printing_characters(repaired)).strip()
+
+
+def _strip_non_printing_characters(text: str) -> str:
+    """Remove private-use and format characters that cannot render as text."""
+    return "".join(
+        character for character in text if unicodedata.category(character) not in {"Co", "Cf"}
+    )
+
+
+_HEADING_PATTERN_ITEM = re.compile(r"^Item\s+\d+[A-Z]?\.\s+\S", re.IGNORECASE)
+# Table column headers ("Years Ended December 31,") and row labels
+# ("2013 2012 2011 2010 2009 (in thousands)") are bold but are not
+# section headings; they are table content.
+_HEADING_PATTERN_TABLE_LABEL = re.compile(r",$|^\d{4}(\s+\d{4})+\s+\(")
 
 
 def _detect_headings(blocks: list[_TextBlock]) -> list[str]:
-    """Infer heading blocks from relative font size or bold typography."""
+    """Infer heading blocks from relative font size or bold typography.
+
+    Long all-caps lines such as a cover page's ``FORM 10-K ...`` heading are
+    rejected: they are page titles, not section headings, and keeping them
+    would seed the structure-aware chunker with noisy section boundaries.
+    SEC "Item NN." headings are bold but rendered at body font size, so they
+    are recognised by pattern rather than by font size alone.
+    """
     font_sizes = [size for block in blocks for size in block.font_sizes if size > 0]
     if not font_sizes:
         return []
@@ -312,7 +341,11 @@ def _detect_headings(blocks: list[_TextBlock]) -> list[str]:
         is_large = block_size >= baseline_size * 1.25
         is_emphasised = block.has_bold_span and block_size > baseline_size
         candidate = clean_text(block.text)
-        if candidate and (is_large or is_emphasised) and candidate not in headings:
+        if not candidate or candidate in headings or len(candidate) > MAX_HEADING_LENGTH:
+            continue
+        if _HEADING_PATTERN_TABLE_LABEL.match(candidate):
+            continue
+        if is_large or is_emphasised or _HEADING_PATTERN_ITEM.match(candidate):
             headings.append(candidate)
     return headings
 

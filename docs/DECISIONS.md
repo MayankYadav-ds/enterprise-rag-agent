@@ -1,51 +1,70 @@
-# Design decisions
+# Decisions and trade-offs
 
-This is a lightweight decision log. Decisions can change when measured evidence points to a better trade-off.
+## Chunking configuration
 
-## ADR-001: Use LangChain as the orchestration layer
+**Provisional defaults:** chunk size 512 tokens, overlap 50 tokens,
+minimum chunk size 10 tokens. These were chosen because they produce
+a balanced trade-off between context window pressure (fewer, larger
+chunks) and boundary precision (smaller chunks end more often at
+sentence boundaries). The values are not optimised for any specific
+document type; update the config file once real retrieval quality
+scores are available.
 
-**Status:** accepted (Phase 1)
+**Tokeniser:** tiktoken `cl100k_base` (GPT-4). This is NOT the
+embedding model's tokenizer — embedding models use a different
+tokenisation that would make chunk boundaries inconsistent with the
+retrieval scoring. The chunking package uses tiktoken for all
+token-counting, and falls back to a character-based estimate only
+if tiktoken is unavailable.
 
-The project will use LangChain rather than LlamaIndex. The pipeline needs modular retrievers, provider-neutral model interfaces, and async streaming that fit a FastAPI service. LangChain provides those primitives without requiring the project to hide retrieval behind a framework-specific index abstraction.
+## Three strategies
 
-**Trade-off:** LangChain changes quickly and adds abstraction. Core records, metrics, prompts, and retrieval-fusion logic will therefore remain in this repository and be covered by tests.
+| Strategy | Boundary precision | Speed | Heading awareness |
+|----------|-------------------|-------|-------------------|
+| fixed_size | lowest | fastest | none |
+| recursive | medium | medium | none |
+| structure_aware | highest (sentence-split oversized paragraphs) | slower | yes |
 
-## ADR-002: Preserve source metadata as a first-class record
+**Recursive is the default.** Structure-aware is NOT claimed to be
+better: on the two real filings it produces more chunks and a higher
+mid-sentence rate than recursive (NPS 15.5% vs 11.5%; N-able 24.8% vs
+24.2%), and its heading-aware splitting is a hypothesis, not a
+verified win. The choice between recursive and structure-aware is
+deferred to Phase 8, when retrieval and answer-quality scores are
+available to judge boundary placement against downstream quality.
 
-**Status:** accepted (Phase 1)
+## Heading detection
 
-Document ID, source URL, page number, section, and extraction method will travel with every chunk. Citations are a product requirement, not a rendering step bolted on after generation.
+SEC "Item NN." headings are bold but rendered at body font size,
+so font-size rules alone miss them. Both the ingestion detector
+and the chunker's fallback use a regex pattern (`^Item\s+\d+[A-Z]?\.`)
+in addition to font-size and uppercase rules.
 
-**Trade-off:** Metadata-aware models and storage schemas take more care to design, but they enable filterable retrieval and auditable answers.
+## Table handling
 
-## ADR-003: Make providers configurable
+Tables are treated as atomic units and split by rows with header
+repetition only when a table exceeds chunk size. Table chunks carry
+`chunk_type=table` and should be excluded from sentence-completeness
+metrics.
 
-**Status:** accepted (Phase 1)
+## Quality threshold
 
-The model provider and model name are environment settings. The eventual generation layer will support both a local/open model and an API provider.
+Pages scoring below 0.900 (e.g. N-able's 44 pages with broken font
+mappings producing non-whitespace control characters) are excluded
+from chunking by default; their tables are still retained.
 
-**Trade-off:** A provider adapter adds surface area, but makes the demo usable without committing to one commercial API or embedding credentials in the codebase.
+## Known limitations
 
-## ADR-004: Combine PyMuPDF text layout with pdfplumber table extraction
+- PDF font encodings can produce unreadable glyph mappings (N-able:
+  44 pages affected). See [#14](https://github.com/MayankYadav-ds/enterprise-rag-agent/issues/14).
+- Unruled multi-year financial tables fragment (NPS page 80). See [#13](https://github.com/MayankYadav-ds/enterprise-rag-agent/issues/13).
+- Superscript footnotes fuse into adjacent values (e.g. `2015¹` becomes `20151`). See [#12](https://github.com/MayankYadav-ds/enterprise-rag-agent/issues/12).
+- Mid-sentence chunk rate is ~12-25% depending on strategy; sentence-boundary splitting reduces it but does not eliminate it for oversized paragraphs.
+- Structure-aware is not better than recursive on the two real filings (NPS 15.5% vs 11.5%, N-able 24.8% vs 24.2%); it also produces more chunks. See [#18](https://github.com/MayankYadav-ds/enterprise-rag-agent/issues/18).
 
-**Status:** accepted (Phase 2)
+## Future work
 
-PyMuPDF provides fast page access, positioned text blocks, span font sizes, font flags, and page images. The parser uses those signals for reading order, heading heuristics, repeated edge-text removal, and image-only-page warnings. pdfplumber complements it with a focused ruled-table API that yields row matrices, which the project renders as Markdown.
-
-**Trade-off:** PDF tables are presentation instructions, not a universal semantic structure. Ruled tables extract well, while unruled or highly merged financial tables can split or be missed. The parser filters single-column prose regions that ruled-line detection mistakes for tables, but it does not yet merge fragments or use an OCR/layout model.
-
-## ADR-005: Cite physical PDF page indexes
-
-**Status:** accepted (Phase 2)
-
-Every `PageContent.page_number` is the one-based index of the page in the PDF file. This is deterministic, works for every source, and lets a reader navigate a downloaded source without relying on extracted text. SEC filings can have a cover and contents pages before the report's printed page numbering, so a citation's PDF index can differ from the page number printed on the page.
-
-**Trade-off:** The future UI should make this distinction explicit, for example: "PDF p. 46 (printed p. 46)" when a printed number can be detected safely.
-
-## ADR-006: Flag damaged text instead of silently repairing it
-
-**Status:** accepted (Phase 2)
-
-`PageContent.text_quality` is a deterministic diagnostic score from 0 to 1. It subtracts the share of text occupied by `(cid:N)` extraction tokens, literal U+FFFD characters, and non-whitespace Unicode control characters. A score below 0.900 creates a `low_text_quality` warning and appears in the CLI summary.
-
-**Trade-off:** The score identifies known decoding artifacts, not factual accuracy, reading order, or table structure. It intentionally does not replace unknown glyphs: an unverified replacement can change legal or financial meaning. The N-able validation report flagged 44 of 125 pages, which provides a review signal while an alternate-extractor or OCR fallback is evaluated.
+- OCR for image-only pages.
+- Table-region merging for fragmented unruled tables.
+- Reranker-guided chunk size adaptation.
+- Page-render-based quality checks.
