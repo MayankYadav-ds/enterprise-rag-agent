@@ -68,12 +68,15 @@ Processed two real SEC 10-K filings (NPS Pharmaceuticals 2013 10-K and N-able 20
 - Created `scripts/compare_chunking.py` - Strategy comparison script
 - Created `tests/test_chunking.py` - Comprehensive test suite
 - Created `scripts/report_metrics.py` - Per-document metric report
+- Created `.agent/diag_mid.py` - scratch diagnostic for mid-sentence chunks (gitignored)
 - Updated documentation: README.md, ARCHITECTURE.md, DECISIONS.md, CHANGELOG.md
 
 ### Real problems hit
 - **Missing tiktoken dependency:** `Chunk.create` used `tiktoken.encoding_for_model("gpt-4")` which raises `ImportError` if tiktoken is not installed. Added `tiktoken` to dev requirements and wrapped the tokenizer init with a character-based fallback that emits a warning.
 - **Import errors:** `_HEADING_PATTERN_ITEM` was referenced before assignment in `_fallback_heading_positions` after the registry fix. Moved the pattern constant to class level before the method definition.
 - **Coverage gap:** `StructureAwareChunking` was excluded from the 85% floor because `chunk()` was never called in tests. Added targeted tests for each branch (low-quality skip, empty text skip, heading split, inline heading remainder, orphan drop).
+- **Heading bug:** `_sections_for_page` lost the body preceding an inline heading on the same line (N-able page 53). Fixed by tracking char_offset in `_heading_positions` and splitting the heading off its own line without dropping preceding text.
+- **Failed pre-commit run:** A formatting fix was stashed and conflicted with the hook auto-fix; the fix was re-applied and committed manually.
 
 ### Known limitations
 - Table chunk count matches expectations but needs validation against ground truth
