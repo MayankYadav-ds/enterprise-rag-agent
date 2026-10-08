@@ -7,7 +7,12 @@ from abc import ABC, abstractmethod
 
 import tiktoken
 
-from rag_agent.chunking.config import LOW_TEXT_QUALITY_THRESHOLD
+from rag_agent.chunking.config import (
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_MIN_CHUNK_SIZE,
+    LOW_TEXT_QUALITY_THRESHOLD,
+)
 from rag_agent.chunking.models import Chunk
 from rag_agent.ingestion.models import PageContent
 
@@ -15,7 +20,12 @@ from rag_agent.ingestion.models import PageContent
 class ChunkingStrategy(ABC):
     """Abstract base class for chunking strategies."""
 
-    def __init__(self, chunk_size: int = 512, chunk_overlap: int = 50, min_chunk_size: int = 10):
+    def __init__(
+        self,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+        min_chunk_size: int = DEFAULT_MIN_CHUNK_SIZE,
+    ):
         """Initialize the chunking strategy.
 
         Args:

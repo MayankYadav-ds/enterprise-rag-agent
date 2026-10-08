@@ -12,7 +12,11 @@ from rag_agent.chunking import (
     RecursiveChunking,
     StructureAwareChunking,
 )
-from rag_agent.chunking.config import LOW_TEXT_QUALITY_THRESHOLD
+from rag_agent.chunking.config import (
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+    LOW_TEXT_QUALITY_THRESHOLD,
+)
 from rag_agent.chunking.models import Chunk
 from rag_agent.ingestion.models import Document, PageContent
 from rag_agent.ingestion.pipeline import ingest_pdf
@@ -24,8 +28,8 @@ def chunk_document(
     document: Document,
     pages: list[PageContent],
     strategy: str = "fixed_size",
-    chunk_size: int = 512,
-    chunk_overlap: int = 50,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> list[Chunk]:
     """Chunk a document using the specified strategy.
 
@@ -92,8 +96,8 @@ def chunk_and_save(
     pdf_path: Path,
     output_dir: Path = Path("data/processed"),
     strategy: str = "fixed_size",
-    chunk_size: int = 512,
-    chunk_overlap: int = 50,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> None:
     """Ingest a PDF and chunk it, saving chunks as JSONL.
 

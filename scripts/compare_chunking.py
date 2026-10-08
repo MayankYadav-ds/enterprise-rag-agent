@@ -85,7 +85,11 @@ def count_tables_in_chunks(chunks: list[Chunk]) -> int:
     return sum(1 for chunk in chunks if chunk.chunk_type == "table")
 
 
-def run_chunking_comparison(data_dir: Path = Path("data/processed")) -> dict:
+def run_chunking_comparison(
+    data_dir: Path = Path("data/processed"),
+    chunk_size: int = 512,
+    chunk_overlap: int = 50,
+) -> dict:
     """Run all three chunking strategies and compare results.
 
     Returns a dict with ``overall`` (aggregated across all documents) and
@@ -96,9 +100,11 @@ def run_chunking_comparison(data_dir: Path = Path("data/processed")) -> dict:
     if not documents:
         raise ValueError(f"No processed pages found in {data_dir}")
     strategies = {
-        "fixed_size": FixedSizeChunking(chunk_size=512, chunk_overlap=50),
-        "recursive": RecursiveChunking(chunk_size=512, chunk_overlap=50),
-        "structure_aware": StructureAwareChunking(chunk_size=512, chunk_overlap=50),
+        "fixed_size": FixedSizeChunking(chunk_size=chunk_size, chunk_overlap=chunk_overlap),
+        "recursive": RecursiveChunking(chunk_size=chunk_size, chunk_overlap=chunk_overlap),
+        "structure_aware": StructureAwareChunking(
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap
+        ),
     }
     per_document: dict[str, dict] = {}
     all_chunks: dict[str, list[Chunk]] = {name: [] for name in strategies}
@@ -199,53 +205,88 @@ def _write_example_chunks(f, chunks: list[Chunk]) -> None:
         f.write(f"```\n{table_preview}\n```\n\n")
 
 
-def save_results_to_markdown(results: dict, output_path: Path = Path("docs/CHUNKING_RESULTS.md")):
-    """Save comparison results to markdown file."""
+def save_results_to_markdown(
+    results: dict,
+    output_path: Path = Path("docs/CHUNKING_RESULTS.md"),
+    section: str | None = None,
+) -> None:
+    """Save comparison results to markdown file.
+
+    When ``section`` is given the run is appended under a labelled section
+    so earlier runs are preserved; otherwise the file is overwritten.
+    """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("# Chunking Strategy Comparison\n\n")
-        f.write("Comparison of three chunking strategies on real PDF documents.\n\n")
-        _write_table(f, results["overall"])
+    if section is None:
+        with open(output_path, "w", encoding="utf-8") as f:
+            _write_results(f, results, header="# Chunking Strategy Comparison\n\n")
+        return
+    with open(output_path, "a", encoding="utf-8") as f:
+        _write_results(f, results, header=f"\n## {section}\n\n")
 
-        f.write("\n## Metric notes\n\n")
-        f.write(
-            "- **%OldMid** is `chunk_ends_mid_sentence` (text does not end in `. ! ?`, "
-            "optionally followed by a closing quote/paren). Table chunks are excluded.\n"
-        )
-        f.write("- **%NewComp** is `chunk_ends_with_complete_sentence`, the complement of OLD.\n")
-        f.write(
-            "- **%NewInd** is the headline metric computed by this script. "
-            "`report_metrics.py` independently reproduces the same values on the "
-            "same chunks; it matches `%NewComp` to the printed precision.\n"
-        )
-        f.write(
-            "- **OLD and NEW are identical in every row.** `%NewComp = 1 - %OldMid` holds "
-            "exactly because the two helpers are complements; `%NewInd` matches `%NewComp` "
-            "to the printed precision. The NEW column is kept as the headline "
-            "boundary-quality metric; OLD is retained only for continuity with earlier "
-            "reports.\n"
-        )
 
-        f.write("\n## Per-document breakdown\n\n")
-        for _label, document in results["per_document"].items():
-            f.write(
-                f"### {document['title']} ({document['num_pages']} pages, "
-                f"{document['low_quality_pages']} low-quality pages)\n\n"
-            )
-            _write_table(f, document["strategies"])
-            f.write("\n")
+def _write_results(f, results: dict, header: str) -> None:
+    f.write(header)
+    f.write("Comparison of three chunking strategies on real PDF documents.\n\n")
+    _write_table(f, results["overall"])
 
-        f.write("\n## Example Chunks\n\n")
-        example_chunks = results["overall"]["structure_aware"]["chunks"]
-        _write_example_chunks(f, example_chunks)
+    f.write("\n## Metric notes\n\n")
+    f.write(
+        "- **%OldMid** is `chunk_ends_mid_sentence` (text does not end in `. ! ?`, "
+        "optionally followed by a closing quote/paren). Table chunks are excluded.\n"
+    )
+    f.write("- **%NewComp** is `chunk_ends_with_complete_sentence`, the complement of OLD.\n")
+    f.write(
+        "- **%NewInd** is the headline metric computed by this script. "
+        "`report_metrics.py` independently reproduces the same values on the "
+        "same chunks; it matches `%NewComp` to the printed precision.\n"
+    )
+    f.write(
+        "- **OLD and NEW are identical in every row.** `%NewComp = 1 - %OldMid` holds "
+        "exactly because the two helpers are complements; `%NewInd` matches `%NewComp` "
+        "to the printed precision. The NEW column is kept as the headline "
+        "boundary-quality metric; OLD is retained only for continuity with earlier "
+        "reports.\n"
+    )
+
+    f.write("\n## Per-document breakdown\n\n")
+    for _label, document in results["per_document"].items():
+        f.write(
+            f"### {document['title']} ({document['num_pages']} pages, "
+            f"{document['low_quality_pages']} low-quality pages)\n\n"
+        )
+        _write_table(f, document["strategies"])
+        f.write("\n")
+
+    f.write("\n## Example Chunks\n\n")
+    example_chunks = results["overall"]["structure_aware"]["chunks"]
+    _write_example_chunks(f, example_chunks)
 
 
 def main():
     """Main function to run chunking comparison."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Compare chunking strategies on real PDFs.")
+    parser.add_argument("--chunk-size", type=int, default=512, help="Target chunk size in tokens")
+    parser.add_argument(
+        "--chunk-overlap", type=int, default=50, help="Overlap between chunks in tokens"
+    )
+    parser.add_argument(
+        "--section",
+        default=None,
+        help="Append the run under this labelled section instead of overwriting the report.",
+    )
+    args = parser.parse_args()
+
     try:
-        results = run_chunking_comparison()
-        save_results_to_markdown(results)
-        print("Chunking comparison completed. Results saved to docs/CHUNKING_RESULTS.md")
+        results = run_chunking_comparison(
+            chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap
+        )
+        save_results_to_markdown(results, section=args.section)
+        print(
+            f"Chunking comparison completed (size={args.chunk_size}, "
+            f"overlap={args.chunk_overlap}). Results saved to docs/CHUNKING_RESULTS.md"
+        )
 
         # Print summary to console
         print("\nSummary:")
