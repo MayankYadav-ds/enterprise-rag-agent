@@ -116,6 +116,27 @@ def test_structure_aware_chunking_creates_deterministic_ids():
         assert c1.chunk_id == c2.chunk_id
 
 
+def test_default_chunk_size_matches_model_token_limit():
+    """The default chunk size must leave a safety margin under the embedding model's limit.
+
+    The bge-small-en-v1.5 WordPiece tokenizer counts more tokens than
+    tiktoken for financial text, so the default was lowered from 512/50 to
+    400/39 so that the p99 chunk fits under the model's 512-token limit.
+    """
+    from rag_agent.chunking.config import (
+        DEFAULT_CHUNK_OVERLAP,
+        DEFAULT_CHUNK_SIZE,
+        DEFAULT_MIN_CHUNK_SIZE,
+    )
+    from rag_agent.embeddings.sentence_transformer import model_max_tokens
+
+    assert DEFAULT_CHUNK_SIZE == 400
+    assert DEFAULT_CHUNK_OVERLAP == 39
+    assert DEFAULT_MIN_CHUNK_SIZE == 10
+    assert DEFAULT_CHUNK_SIZE < model_max_tokens()
+    assert DEFAULT_CHUNK_OVERLAP < DEFAULT_CHUNK_SIZE
+
+
 def test_chunk_model_creation():
     """Test that Chunk model can be created correctly."""
     chunk = Chunk.create(
