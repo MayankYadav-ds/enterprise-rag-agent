@@ -30,9 +30,9 @@ def parse_arguments() -> argparse.Namespace:
         default="fixed_size",
         help="Chunking strategy to use",
     )
-    parser.add_argument("--chunk-size", type=int, default=512, help="Target chunk size in tokens")
+    parser.add_argument("--chunk-size", type=int, default=400, help="Target chunk size in tokens")
     parser.add_argument(
-        "--chunk-overlap", type=int, default=50, help="Overlap between chunks in tokens"
+        "--chunk-overlap", type=int, default=39, help="Overlap between chunks in tokens"
     )
     return parser.parse_args()
 
