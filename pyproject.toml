@@ -21,6 +21,7 @@ dependencies = [
   "pdfplumber>=0.11,<1",
   "pydantic>=2.7,<3",
   "PyMuPDF>=1.24,<2",
+  "qdrant-client>=1.10,<2",
   "tiktoken>=0.14,<1",
 ]
 
@@ -31,6 +32,9 @@ dev = [
   "pytest-cov>=5,<7",
   "reportlab>=4.2,<5",
   "ruff>=0.5,<1",
+]
+embeddings = [
+  "sentence-transformers>=4,<7",
 ]
 
 [project.urls]
