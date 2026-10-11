@@ -1,8 +1,9 @@
 """Unit tests for the lazy WordPiece tokenizer (no download).
 
-Every test patches ``huggingface_hub.hf_hub_download`` and
-``tokenizers.Tokenizer.from_file`` at the source modules, because the imports
-inside ``wordpiece_tokenizer()`` are lazy. No network, no torch.
+Every test injects fake ``huggingface_hub`` and ``tokenizers`` modules into
+``sys.modules`` so the lazy imports inside ``wordpiece_tokenizer()`` resolve to
+stubs. No network, no torch, and works whether or not the embeddings extra is
+installed.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import threading
+import types
 
 import pytest
 
@@ -35,23 +37,31 @@ class FakeTokenizer:
         return _FakeEncoding([ord(c) % 512 for c in text])
 
 
+def _install_fakes(monkeypatch: pytest.MonkeyPatch) -> FakeTokenizer:
+    """Inject fake huggingface_hub and tokenizers modules into sys.modules."""
+    fake = FakeTokenizer()
+    monkeypatch.setattr(lazy_tokenizer, "_tokenizer", None)
+    monkeypatch.setattr(lazy_tokenizer, "_lock", threading.Lock())
+
+    fake_hf = types.ModuleType("huggingface_hub")
+    fake_hf.hf_hub_download = lambda repo_id, filename: f"/fake/{filename}"
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+
+    fake_tokenizers = types.ModuleType("tokenizers")
+
+    class _Tokenizer:
+        @staticmethod
+        def from_file(path: str) -> FakeTokenizer:
+            return fake
+
+    fake_tokenizers.Tokenizer = _Tokenizer
+    monkeypatch.setitem(sys.modules, "tokenizers", fake_tokenizers)
+    return fake
+
+
 @pytest.fixture(autouse=True)
 def _fake_tokenizer(monkeypatch: pytest.MonkeyPatch) -> FakeTokenizer:
-    """Reset the module-level cache and inject stubs before every test."""
-    monkeypatch.setattr(lazy_tokenizer, "_tokenizer", None)
-    fake = FakeTokenizer()
-    monkeypatch.setattr(lazy_tokenizer, "_lock", threading.Lock())
-    # Patch at the source modules: the imports inside wordpiece_tokenizer()
-    # are lazy, so the module-level attribute does not exist yet.
-    monkeypatch.setattr(
-        "huggingface_hub.hf_hub_download",
-        lambda repo_id, filename: f"/fake/{filename}",
-    )
-    monkeypatch.setattr(
-        "tokenizers.Tokenizer.from_file",
-        lambda path: fake,
-    )
-    return fake
+    return _install_fakes(monkeypatch)
 
 
 def test_import_utils_without_huggingface_hub():
