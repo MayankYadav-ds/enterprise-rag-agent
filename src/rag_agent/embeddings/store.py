@@ -12,22 +12,6 @@ from rag_agent.embeddings.protocol import Embedder
 
 PROJECT_NAMESPACE = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
-# Payload fields stored per point so citations can be answered from
-# Qdrant without re-hydrating chunks.
-_PAYLOAD_FIELDS = [
-    "chunk_id",
-    "doc_id",
-    "source_file",
-    "chunk_type",
-    "page_start",
-    "page_end",
-    "section_heading",
-    "text_quality",
-    "token_count",
-    "text",
-    "embedding_model",
-]
-
 
 def point_id(chunk_id: str) -> uuid.UUID:
     """Deterministic UUID5 for a chunk ID so re-runs never duplicate points."""
