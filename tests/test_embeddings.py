@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
+
+import pytest
 
 from rag_agent.embeddings.fake import FakeEmbedder
 from rag_agent.embeddings.protocol import Embedder
@@ -52,33 +55,32 @@ class TestFakeEmbedder:
 
 class TestLazyImport:
     def test_embeddings_package_loads_without_sentence_transformers(self):
-        """Loading the embeddings package must not import sentence_transformers."""
-        # sentence-transformers is not a dependency of the base package
-        assert "sentence_transformers" not in sys.modules
-        import rag_agent.embeddings  # noqa: F401
+        """Loading the embeddings package must not import sentence_transformers.
 
-        assert "sentence_transformers" not in sys.modules
-
-    def test_missing_sentence_transformers_raises_clear_error(self):
-        """If sentence_transformers is removed from sys.modules then a
-        real embedder would raise — FakeEmbedder still works without it."""
-        blocker = ModuleBlocker("sentence_transformers")
-        sys.modules["sentence_transformers"] = blocker
-        try:
-            from rag_agent.embeddings.fake import FakeEmbedder  # noqa: F811
-
-            e = FakeEmbedder()
-            assert e.model_name == "fake"
-        finally:
-            sys.modules.pop("sentence_transformers", None)
-
-
-class ModuleBlocker:
-    def __init__(self, name: str):
-        self.__name__ = name
-
-    def __getattr__(self, item: str):
-        raise ImportError(
-            "sentence-transformers is required for the real embedder; "
-            'install with: python -m pip install -e ".[embeddings]"'
+        Checked in a subprocess so the test is order-independent: it does not
+        depend on whether another test imported sentence-transformers first.
+        """
+        code = (
+            "import rag_agent.embeddings; "
+            "import sys; "
+            "assert 'sentence_transformers' not in sys.modules; "
+            "print('ok')"
         )
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "ok"
+
+    def test_missing_sentence_transformers_raises_clear_error(self, monkeypatch):
+        """Constructing the real embedder without sentence_transformers raises
+        the clear install error. monkeypatch.setitem blocks the import without
+        touching sys.modules directly."""
+        from rag_agent.embeddings.sentence_transformer import SentenceTransformerEmbedder
+
+        monkeypatch.setitem(sys.modules, "sentence_transformers", None)
+        with pytest.raises(RuntimeError, match="sentence-transformers is required"):
+            SentenceTransformerEmbedder()

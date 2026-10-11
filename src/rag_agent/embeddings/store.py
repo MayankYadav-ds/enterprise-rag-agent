@@ -189,18 +189,16 @@ class QdrantStore:
         existing = set(self.scroll_ids(doc_id=doc_id))
         target_ids = {point_id(c.chunk_id) for c in chunks}
 
-        stale = existing - target_ids
-        if stale:
-            self._client.delete(
-                self.collection_name,
-                points_selector=list(stale),
-            )
-
+        # Upsert the new chunks FIRST. If the embedder fails mid-way the old
+        # points of this document are still in the collection; deleting stale
+        # points before embedding would leave the document half-gone on a
+        # failure. The delete runs last so a failed sync is a no-op.
         new_chunks = [c for c in chunks if point_id(c.chunk_id) not in existing]
+        upserted = 0
         if new_chunks:
             vectors = embedder.embed_documents([c.text for c in new_chunks])
             points = []
-            for chunk, vector in zip(new_chunks, vectors, strict=False):
+            for chunk, vector in zip(new_chunks, vectors, strict=True):
                 points.append(
                     models.PointStruct(
                         id=point_id(chunk.chunk_id),
@@ -209,11 +207,21 @@ class QdrantStore:
                     )
                 )
             self._client.upsert(self.collection_name, points=points)
+            upserted = len(new_chunks)
+
+        stale = existing - target_ids
+        deleted = 0
+        if stale:
+            self._client.delete(
+                self.collection_name,
+                points_selector=list(stale),
+            )
+            deleted = len(stale)
 
         return {
-            "upserted": len(new_chunks),
-            "deleted": len(stale),
-            "skipped": len(chunks) - len(new_chunks),
+            "upserted": upserted,
+            "deleted": deleted,
+            "skipped": len(chunks) - upserted,
         }
 
     def search(

@@ -48,6 +48,28 @@ def make_chunk(**overrides) -> Chunk:
     return Chunk.create(**defaults)
 
 
+class FailingEmbedder(FakeEmbedder):
+    """Embedder that raises on the Nth call to embed_documents."""
+
+    def __init__(self, fail_at: int, dimension: int = 16) -> None:
+        super().__init__(dimension=dimension)
+        self._fail_at = fail_at
+        self._call_count = 0
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self._call_count += 1
+        if self._call_count >= self._fail_at:
+            raise RuntimeError("simulated embed failure")
+        return super().embed_documents(texts)
+
+
+class ShortVectorEmbedder(FakeEmbedder):
+    """Embedder that returns fewer vectors than texts — exercises strict=True."""
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return super().embed_documents(texts[:-1])
+
+
 @pytest.fixture
 def store() -> QdrantStore:
     return QdrantStore(
@@ -188,6 +210,40 @@ class TestQdrantStore:
                 collection_name=name,
                 url=":memory:",
             )
+
+    def test_sync_strict_zip_rejects_mismatched_vectors(self, store):
+        """zip(..., strict=True) means embed_documents must return exactly
+        len(new_chunks) vectors; fewer or more raises ValueError."""
+        chunks = [make_chunk(text="alpha"), make_chunk(text="beta")]
+        with pytest.raises(ValueError, match="zip"):
+            store.sync(chunks[0].doc_id, chunks, ShortVectorEmbedder(dimension=16))
+
+    def test_sync_upsert_before_delete_preserves_old_on_failure(self, store):
+        """If embed_documents fails mid-way, the old points of that document
+        must still be there. The new chunks are embedded and upserted FIRST;
+        stale points are deleted AFTER."""
+        # Pre-populate with 3 chunks for doc_1
+        original = [
+            make_chunk(chunk_index=0, text="original 0"),
+            make_chunk(chunk_index=1, text="original 1"),
+            make_chunk(chunk_index=2, text="original 2"),
+        ]
+        store.sync(original[0].doc_id, original, store.embedder)
+        assert store.count() == 3
+
+        # New sync with 2 chunks, but embedder fails on the FIRST call
+        new_chunks = [
+            make_chunk(chunk_index=0, text="new 0"),
+            make_chunk(chunk_index=1, text="new 1"),
+        ]
+        failing_embedder = FailingEmbedder(fail_at=1, dimension=16)
+        with pytest.raises(RuntimeError, match="simulated embed failure"):
+            store.sync(new_chunks[0].doc_id, new_chunks, failing_embedder)
+
+        # The old points must still be there (delete ran after upsert failed)
+        assert store.count() == 3
+        ids = store.scroll_ids(doc_id=original[0].doc_id)
+        assert len(ids) == 3
 
     def test_scroll_ids(self, store):
         c1 = make_chunk(doc_id="doc_1", text="first chunk text")

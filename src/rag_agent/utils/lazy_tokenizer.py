@@ -3,15 +3,20 @@
 This module provides the model's actual WordPiece tokenizer (from the tokenizers
 library, >=0.20) without importing torch or sentence-transformers. The tokenizer
 weights are downloaded once from Hugging Face and cached locally.
+
+The ``huggingface_hub`` and ``tokenizers`` imports are **lazy** — they happen
+inside ``wordpiece_tokenizer()`` on first use, so ``import rag_agent.utils``
+works even when those packages are not installed.
 """
 
 from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from huggingface_hub import hf_hub_download
-from tokenizers import Tokenizer
+if TYPE_CHECKING:
+    from tokenizers import Tokenizer
 
 _MODEL_ID = "BAAI/bge-small-en-v1.5"
 _MAX_MODEL_TOKENS = 512  # As declared in config.json: max_position_embeddings=512
@@ -34,7 +39,14 @@ _lock = threading.Lock()
 
 
 def wordpiece_tokenizer() -> WordPieceTokenizer:
-    """Return the cached WordPiece tokenizer, downloading on first use."""
+    """Return the cached WordPiece tokenizer, downloading on first use.
+
+    Imports are deferred to this function so the module can be imported even
+    when ``huggingface_hub`` and ``tokenizers`` are not installed.
+    """
+    from huggingface_hub import hf_hub_download
+    from tokenizers import Tokenizer
+
     global _tokenizer
     if _tokenizer is not None:
         return _tokenizer
