@@ -62,12 +62,19 @@ def build_embedder() -> SentenceTransformerEmbedder:
         raise SystemExit(1) from exc
 
 
-def index_documents() -> int:
-    args = parse_arguments()
+def _configure_logging(level: str) -> None:
+    """Configure logging without httpx/httpcore/huggingface noise."""
     logging.basicConfig(
-        level=args.log_level.upper(),
+        level=level,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    for noisy in ("httpx", "httpcore", "huggingface_hub"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+def index_documents() -> int:
+    args = parse_arguments()
+    _configure_logging(args.log_level.upper())
     started_at = perf_counter()
 
     input_dir = args.input
