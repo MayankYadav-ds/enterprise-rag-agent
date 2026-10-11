@@ -28,6 +28,10 @@ def run_smoke_queries(
     score, page range, section heading and a 100-character snippet of the
     stored text. The snippet is truncated in place so callers never receive
     more than 100 characters of payload text.
+
+    ``source_file`` is the PDF the hit came from and ``doc_id_prefix`` is the
+    first 8 characters of the document id, so a hit can be traced back to its
+    source without re-hydrating the chunk.
     """
     results: list[dict] = []
     for query in queries:
@@ -36,6 +40,7 @@ def run_smoke_queries(
         for hit in hits:
             payload = hit.payload or {}
             snippet = (payload.get("text") or "").replace("\n", " ")[:100]
+            doc_id = payload.get("doc_id") or ""
             results.append(
                 {
                     "query": query,
@@ -44,6 +49,8 @@ def run_smoke_queries(
                     "page_end": payload.get("page_end"),
                     "section_heading": payload.get("section_heading"),
                     "snippet": snippet,
+                    "source_file": payload.get("source_file") or "",
+                    "doc_id_prefix": doc_id[:8],
                 }
             )
     return results

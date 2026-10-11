@@ -31,7 +31,9 @@ def _make_chunk(**overrides) -> Chunk:
     return Chunk.create(**defaults)
 
 
-def _store_with(chunks) -> tuple[QdrantStore, FakeEmbedder]:
+def _store_with(
+    chunks, source_file="N-able_2024_Annual_Report.pdf"
+) -> tuple[QdrantStore, FakeEmbedder]:
     embedder = FakeEmbedder(dimension=16)
     store = QdrantStore(
         embedder=embedder,
@@ -39,7 +41,7 @@ def _store_with(chunks) -> tuple[QdrantStore, FakeEmbedder]:
         url=":memory:",
     )
     if chunks:
-        store.sync(chunks[0].doc_id, chunks, embedder)
+        store.sync(chunks[0].doc_id, chunks, embedder, source_file=source_file)
     return store, embedder
 
 
@@ -56,6 +58,8 @@ class TestRunSmokeQueries:
         assert hit["page_start"] == 5
         assert hit["page_end"] == 5
         assert hit["section_heading"] == "Financial Results"
+        assert hit["source_file"] == "N-able_2024_Annual_Report.pdf"
+        assert hit["doc_id_prefix"] == "doc_smoke"[:8]
         assert len(hit["snippet"]) <= 100
 
     def test_snippet_truncated_to_100_chars(self):

@@ -81,6 +81,7 @@ def main() -> int:
             f"[{hit['query']}] score={hit['score']:.4f} "
             f"pages={hit['page_start']}-{hit['page_end']} "
             f"heading={hit['section_heading']!r} "
+            f"source={hit['source_file']!r} doc_id={hit['doc_id_prefix']} "
             f"snippet={hit['snippet']!r}"
         )
     return 0
