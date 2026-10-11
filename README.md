@@ -77,15 +77,35 @@ Re-running the command is idempotent: chunks whose IDs already exist are skipped
 and points removed from the document are deleted, so a re-index only ever
 upserts what changed.
 
-### Docker
+### Docker (recommended)
 
-`docker-compose.yml` runs a local Qdrant server on port 6333:
+`docker-compose.yml` runs Qdrant locally on port 6333. Indexing inside the
+compose network uses `host.docker.internal`‑style discovery via the shared
+bridge network. Run indexing with the compose network attached:
 
 ```bash
-docker compose up -d
+docker compose up -d          # start Qdrant
+docker compose exec indexer \
+    python scripts/index_documents.py \
+        --input data/raw --strategy recursive --recreate \
+        --qdrant-url http://qdrant:6333
 ```
 
-Point the indexer at it with `--qdrant-url http://localhost:6333`.
+Alternatively, run the indexing container manually:
+
+```bash
+docker run --rm \
+    --network enterprise-rag-agent_default \
+    --env QDRANT_URL=http://qdrant:6333 \
+    --volume "$(pwd)/data:/data:ro" \
+    --volume "$(pwd)/src:/rag_agent/src:ro" \
+    --workdir /rag_agent \
+    python:3.11 \
+    python -m pip install -e ".[embeddings]" \
+    && python scripts/index_documents.py \
+        --input data/raw --strategy recursive --recreate \
+        --qdrant-url http://qdrant:6333
+```
 
 ### torch and Windows Application Control
 
@@ -98,7 +118,7 @@ before touching the store.
 
 Indexing can then run unchanged inside a Linux container: build the image with
 the `[embeddings]` extra installed and torch working, point it at the same
-Qdrant server, and re-run the command above. The token-limit measurements in
+Qdrant server, and re-run the commands above. The token-limit measurements in
 [`docs/TOKEN_LIMIT_REPORT.md`](docs/TOKEN_LIMIT_REPORT.md) were collected with the
 model's WordPiece tokenizer alone, which needs no torch.
 
