@@ -55,7 +55,15 @@ class SentenceTransformerEmbedder(Embedder):
         self.device = device
         self.normalize_embeddings = normalize_embeddings
         self._model = SentenceTransformer(self.model_name, device=device)
-        self._dimension = int(self._model.get_sentence_embedding_dimension())
+        # Prefer the current API; fall back to the deprecated alias so the
+        # embedder keeps working with older sentence-transformers releases that
+        # predate ``get_embedding_dimension``. The lookup is attribute-based but
+        # the call is guarded so a stub that exposes only the alias is detected
+        # by the AttributeError rather than by a callable check.
+        try:
+            self._dimension = int(self._model.get_embedding_dimension())
+        except AttributeError:
+            self._dimension = int(self._model.get_sentence_embedding_dimension())
 
     @property
     def model_name(self) -> str:
