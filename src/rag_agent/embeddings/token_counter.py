@@ -11,10 +11,10 @@ against any tokenizer that exposes ``encode(text)`` returning an object with
 ``ids`` (the ``tokenizers.Tokenizer`` interface used by both
 ``sentence_transformers`` and Hugging Face tokenizers).
 
-The real model can't be loaded on machines that block torch (e.g. the CI
-host or Windows machines with an Application Control policy). In that case
-pass a fake tokenizer to ``count_model_tokens`` in tests; the real
-token-limit report must be collected on a machine where torch works.
+The real model can't be loaded on machines that block torch (e.g. Windows
+machines with an Application Control policy), but the tokenizer itself can be
+downloaded without torch: ``scripts/measure_token_limits.py`` uses
+``tokenizers`` directly to measure the real WordPiece token counts.
 """
 
 from __future__ import annotations
