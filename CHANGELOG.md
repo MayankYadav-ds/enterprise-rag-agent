@@ -1,5 +1,14 @@
 # Changelog
 
+## [Phase 4 — embeddings and Qdrant] — in progress on feat/embeddings-qdrant
+
+- **feat(embeddings):** `SentenceTransformerEmbedder` backed by BAAI/bge-small-en-v1.5, with the bge instruction prefix on queries and L2-normalised output.
+- **feat(embeddings):** `QdrantStore` with cosine vectors, UUID5 point IDs, payload keyword indexes, `search` with `doc_id`/`chunk_type` filters, and a diff-based `sync` that returns `{"upserted", "deleted", "skipped"}` and never touches another document's points.
+- **feat(embeddings):** `count_model_tokens` / `model_token_stats` measure the real WordPiece token length of any chunk set against the model's 512-token limit.
+- **fix(chunking):** default chunk size lowered from 512/50 to 400/39 after measuring the bge tokenizer on the real filings: at 512/50, 14.1% of NPS and 21.1% of N-able text chunks exceeded the model limit and were silently truncated; at 400/39, 0.3% and 0.0% respectively, with p99 of 456 and 429.
+- **feat(scripts):** `index_documents.py` (ingest → chunk → embed → Qdrant), `docker-compose.yml` + `.env.example`, and `smoke_queries.py` (embeds three natural-language queries and prints score, page range, section heading and snippet for each top-3 hit).
+- **feat(embeddings):** `rag_agent.embeddings.smoke` shared helper unit-tested with a `FakeEmbedder` and in-memory Qdrant, so the retrieval path is covered without torch.
+
 ## [Phase 3 — chunking] — in progress on feat/chunking
 
 - **fix(ingestion):** `clean_text` now drops private-use area glyphs (Co category) and non-printing format characters (Cf), closing issue #17. Verified against the real NPS 10-K (4 distinct Co codepoints: 0xf020, 0xf078, 0xf0a8, 0xf0b7).
