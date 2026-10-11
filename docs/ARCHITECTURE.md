@@ -77,6 +77,32 @@ in both the ingestion detector and the chunker's fallback.
 - No empty or near-empty chunks are produced (minimum size enforced).
 - Chunk IDs are deterministic: `chunk_<doc_id>_<8-hex-position>_<16-hex-sha256>`.
 
+## Indexing (embeddings + Qdrant)
+
+`scripts/index_documents.py` runs ingest → chunk → embed → Qdrant in one pass.
+Each chunk is embedded with the BAAI/bge-small-en-v1.5 model and stored as a
+point in a Qdrant collection.
+
+```mermaid
+flowchart LR
+    PDF[PDF in data/raw] --> I[Ingestion: page-aware JSON]
+    I --> C[Chunking: recursive strategy]
+    C --> E[Embeddings: bge-small-en-v1.5]
+    E --> Q[(Qdrant collection)]
+    Q --> S[Search: query vector, top_k]
+    S --> H[Hits: score, page, heading, snippet]
+```
+
+- Vectors are L2-normalised so cosine similarity equals the dot product in Qdrant.
+- Point IDs are deterministic UUID5s derived from the chunk ID, so re-runs never
+  duplicate points and a diff-based sync only upserts what changed.
+- Each point carries a payload with `chunk_id`, `doc_id`, `source_file`,
+  `chunk_type`, `page_start`, `page_end`, `section_heading`, `text_quality`,
+  `token_count`, `text` and `embedding_model`, so citations can be answered from
+  Qdrant without re-hydrating chunks.
+- The model silently truncates text beyond 512 WordPiece tokens, so chunk size
+  was lowered from 512/50 to 400/39. See [`docs/TOKEN_LIMIT_REPORT.md`](TOKEN_LIMIT_REPORT.md).
+
 ## Retrieval, generation, evaluation
 
 `src/rag_agent/retrieval/` combines BM25 and dense-vector retrieval with
