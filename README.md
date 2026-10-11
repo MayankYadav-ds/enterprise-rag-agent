@@ -65,6 +65,43 @@ pytest
 
 Copy `.env.example` to `.env` before configuring a model provider. Do not commit `.env` or API keys.
 
+## Indexing PDFs
+
+Indexing runs the ingest → chunk → embed → Qdrant pipeline in one command:
+
+```bash
+python scripts/index_documents.py --input data/raw --strategy recursive --recreate
+```
+
+Re-running the command is idempotent: chunks whose IDs already exist are skipped,
+and points removed from the document are deleted, so a re-index only ever
+upserts what changed.
+
+### Docker
+
+`docker-compose.yml` runs a local Qdrant server on port 6333:
+
+```bash
+docker compose up -d
+```
+
+Point the indexer at it with `--qdrant-url http://localhost:6333`.
+
+### torch and Windows Application Control
+
+The embedding model (BAAI/bge-small-en-v1.5) is backed by PyTorch, which this
+repository loads via `sentence-transformers`. On some Windows machines an
+Application Control policy blocks torch's shared libraries
+(`WinError 4551` on `torch/lib/c10.dll`), and the model cannot be loaded. When
+that happens the indexer and `scripts/smoke_queries.py` exit with a clear error
+before touching the store.
+
+Indexing can then run unchanged inside a Linux container: build the image with
+the `[embeddings]` extra installed and torch working, point it at the same
+Qdrant server, and re-run the command above. The token-limit measurements in
+[`docs/TOKEN_LIMIT_REPORT.md`](docs/TOKEN_LIMIT_REPORT.md) were collected with the
+model's WordPiece tokenizer alone, which needs no torch.
+
 ## Ingest PDFs
 
 Put legally usable PDFs under `data/raw/` (this directory is deliberately Git-ignored), then run:
@@ -115,7 +152,7 @@ scripts/               Repeatable developer commands
 
 ## Limitations and future work
 
-The current repository does not include OCR: image-only/scanned pages are warned about and skipped. PDF font encodings can also produce unreadable glyph mappings, and complex unruled financial tables can split into fragments. Phase 2 validation notes document both observations and the next steps; future work includes OCR, table-region merging, and page-render-based quality checks. Planned phases add vector storage, retrieval, answer generation, evaluation, and a Dockerised UI.
+The current repository does not include OCR: image-only/scanned pages are warned about and skipped. PDF font encodings can also produce unreadable glyph mappings, and complex unruled financial tables can split into fragments. Phase 2 validation notes document both observations and the next steps; future work includes OCR, table-region merging, and page-render-based quality checks. Vector storage and indexing are implemented in Phase 4; retrieval, answer generation, evaluation, and a Dockerised UI arrive in later phases.
 
 ## Contributing
 
