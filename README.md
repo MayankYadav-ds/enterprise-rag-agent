@@ -79,33 +79,29 @@ upserts what changed.
 
 ### Docker (recommended)
 
-`docker-compose.yml` runs Qdrant locally on port 6333. Indexing inside the
-compose network uses `host.docker.internal`‑style discovery via the shared
-bridge network. Run indexing with the compose network attached:
+`docker-compose.yml` runs Qdrant locally on port 6333. The indexing container
+must run on the same compose network so it can reach Qdrant by service name —
+`host.docker.internal` does not work here. Start Qdrant, then run indexing with
+the compose network attached:
 
 ```bash
 docker compose up -d          # start Qdrant
-docker compose exec indexer \
-    python scripts/index_documents.py \
-        --input data/raw --strategy recursive --recreate \
-        --qdrant-url http://qdrant:6333
-```
 
-Alternatively, run the indexing container manually:
-
-```bash
 docker run --rm \
     --network enterprise-rag-agent_default \
     --env QDRANT_URL=http://qdrant:6333 \
-    --volume "$(pwd)/data:/data:ro" \
-    --volume "$(pwd)/src:/rag_agent/src:ro" \
+    --volume "$(pwd):/rag_agent" \
     --workdir /rag_agent \
     python:3.11 \
-    python -m pip install -e ".[embeddings]" \
-    && python scripts/index_documents.py \
-        --input data/raw --strategy recursive --recreate \
-        --qdrant-url http://qdrant:6333
+    sh -c 'python -m pip install -e ".[embeddings]" \
+        && python scripts/index_documents.py \
+            --input data/raw --strategy recursive --recreate \
+            --qdrant-url http://qdrant:6333'
 ```
+
+The repo is mounted at `/rag_agent`, so the indexer reads `data/raw` and writes
+`data/processed` on the host. `Qdrant` is reachable as `http://qdrant:6333`
+because both containers share the `enterprise-rag-agent_default` network.
 
 ### torch and Windows Application Control
 
