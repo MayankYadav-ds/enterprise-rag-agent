@@ -62,7 +62,7 @@ Write-Log "===== index_in_docker.ps1 start (strategy=$Strategy, skipSecondRun=$S
 Write-Log "docker compose up -d"
 $prev = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-$composeOutput = docker compose up -d 2>&1
+$composeOutput = docker compose up -d 2>&1 | Out-String
 $composeExit = $LASTEXITCODE
 $ErrorActionPreference = $prev
 if ($composeOutput) { $composeOutput.Trim() | ForEach-Object { Write-Log "compose: $_" } }
@@ -104,7 +104,7 @@ $dockerOutput = docker run --rm `
     -v hf_cache:/root/.cache/huggingface `
     -v pip_cache:/root/.cache/pip `
     --workdir /rag_agent `
-    python:3.11-slim bash "$containerScript" "$Strategy" "http://qdrant:6333" "$skipFlag" 2>&1
+    python:3.11-slim bash "$containerScript" "$Strategy" "http://qdrant:6333" "$skipFlag" 2>&1 | Out-String
 $dockerExit = $LASTEXITCODE
 $ErrorActionPreference = $prev
 if ($dockerOutput) { $dockerOutput.Trim() | ForEach-Object { Write-Log "docker: $_" } }
