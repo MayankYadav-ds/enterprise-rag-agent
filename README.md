@@ -103,6 +103,8 @@ The repo is mounted at `/rag_agent`, so the indexer reads `data/raw` and writes
 `data/processed` on the host. `Qdrant` is reachable as `http://qdrant:6333`
 because both containers share the `enterprise-rag-agent_default` network.
 
+The full run (compose up, wait for Qdrant, recreate, idempotent re-index, and smoke queries) is scripted in `scripts/index_in_docker.ps1` — run it from any folder, including the parent of the repo.
+
 ### torch and Windows Application Control
 
 The embedding model (BAAI/bge-small-en-v1.5) is backed by PyTorch, which this
