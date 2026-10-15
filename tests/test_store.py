@@ -9,7 +9,12 @@ import pytest
 from rag_agent.chunking.models import Chunk
 from rag_agent.embeddings.fake import FakeEmbedder
 from rag_agent.embeddings.protocol import Embedder
-from rag_agent.embeddings.store import PROJECT_NAMESPACE, QdrantStore, point_id
+from rag_agent.embeddings.store import (
+    PROJECT_NAMESPACE,
+    QdrantStore,
+    _source_file_name,
+    point_id,
+)
 
 
 class _StubEmbedder(Embedder):
@@ -263,3 +268,135 @@ class TestQdrantStore:
         assert len(store.scroll_ids(doc_id="doc_1")) == 1
         assert len(store.scroll_ids(doc_id="doc_2")) == 1
         assert len(store.scroll_ids()) == 2
+
+    def test_source_file_stored_as_bare_filename(self, store):
+        """The payload stores the bare file name, not the indexed relative path.
+
+        Citations only ever need the file name, so a renamed source file is
+        reflected without re-hydrating the chunk.
+        """
+        c = make_chunk()
+        store.sync(c.doc_id, [c], store.embedder, source_file="data/raw/nps-2013-10k.pdf")
+        hits = store.search(store.embedder.embed_query("x"), top_k=10)
+        assert hits[0].payload["source_file"] == "nps-2013-10k.pdf"
+
+    def test_source_file_absolute_path_is_basenamed(self, store):
+        c = make_chunk()
+        store.sync(
+            c.doc_id,
+            [c],
+            store.embedder,
+            source_file="/mnt/shared/raw/sec-form-10-k-pdf-fixture.pdf",
+        )
+        hits = store.search(store.embedder.embed_query("x"), top_k=10)
+        assert hits[0].payload["source_file"] == "sec-form-10-k-pdf-fixture.pdf"
+
+    def test_payload_updated_zero_when_unchanged(self, store):
+        """Re-syncing identical chunks must not patch any payload."""
+        c = make_chunk()
+        first = store.sync(c.doc_id, [c], store.embedder, source_file="a.pdf")
+        assert first["payload_updated"] == 0
+        second = store.sync(c.doc_id, [c], store.embedder, source_file="a.pdf")
+        assert second["upserted"] == 0
+        assert second["skipped"] == 1
+        assert second["payload_updated"] == 0
+
+    def test_payload_updated_renames_source_file_without_reembedding(self, store):
+        """A renamed source file is reflected by patching the payload.
+
+        The vector is never touched, so the cosine similarity is unchanged and
+        the point is not re-embedded — only the citation metadata is refreshed.
+        """
+        c = make_chunk()
+        store.sync(c.doc_id, [c], store.embedder, source_file="old-name.pdf")
+        assert store.count() == 1
+
+        result = store.sync(c.doc_id, [c], store.embedder, source_file="new-name.pdf")
+        assert result["upserted"] == 0
+        assert result["skipped"] == 1
+        assert result["payload_updated"] == 1
+
+        hits = store.search(store.embedder.embed_query("x"), top_k=10)
+        assert hits[0].payload["source_file"] == "new-name.pdf"
+
+    def test_payload_updated_patches_changed_fields_only(self, store):
+        """Only chunks whose payload actually changed are patched."""
+        c1 = make_chunk(chunk_index=0, text="alpha text")
+        c2 = make_chunk(chunk_index=1, text="beta text")
+        store.sync(c1.doc_id, [c1, c2], store.embedder, source_file="a.pdf")
+
+        # Same chunks, same source file -> nothing to patch.
+        result = store.sync(c1.doc_id, [c1, c2], store.embedder, source_file="a.pdf")
+        assert result["payload_updated"] == 0
+
+        # Rename the source file -> both chunks patched.
+        result = store.sync(c1.doc_id, [c1, c2], store.embedder, source_file="b.pdf")
+        assert result["payload_updated"] == 2
+        hits = store.search(store.embedder.embed_query("x"), top_k=10)
+        assert {h.payload["source_file"] for h in hits} == {"b.pdf"}
+
+    def test_payload_updated_uses_batched_set_payload(self, store):
+        """Payload patches are sent as a single batch_update_points call.
+
+        The review asked for batching rather than one request per point: the
+        patch pass builds one SetPayloadOperation per changed point and sends
+        them all in one batch. The vectors are never touched, so the cosine
+        similarity is unchanged.
+        """
+        chunks = [make_chunk(chunk_index=i, text=f"chunk {i} text") for i in range(5)]
+        store.sync(chunks[0].doc_id, chunks, store.embedder, source_file="old.pdf")
+
+        # Rename the source file -> all 5 chunks patched in one batch.
+        result = store.sync(chunks[0].doc_id, chunks, store.embedder, source_file="new.pdf")
+        assert result["payload_updated"] == 5
+        assert result["upserted"] == 0
+        assert result["skipped"] == 5
+
+        hits = store.search(store.embedder.embed_query("x"), top_k=10)
+        assert {h.payload["source_file"] for h in hits} == {"new.pdf"}
+        # The vectors are untouched: the same chunk_id still points at the
+        # original vector, so the hit count is unchanged.
+        assert len(hits) == 5
+
+    def test_payload_updated_batch_with_some_unchanged(self, store):
+        """Only the chunks whose payload changed are included in the batch."""
+        c1 = make_chunk(chunk_index=0, text="alpha text")
+        c2 = make_chunk(chunk_index=1, text="beta text")
+        store.sync(c1.doc_id, [c1, c2], store.embedder, source_file="a.pdf")
+
+        # Same chunks, same source file -> nothing to patch.
+        result = store.sync(c1.doc_id, [c1, c2], store.embedder, source_file="a.pdf")
+        assert result["payload_updated"] == 0
+        assert result["upserted"] == 0
+        assert result["skipped"] == 2
+
+        # Rename the source file -> both chunks patched in one batch.
+        result = store.sync(c1.doc_id, [c1, c2], store.embedder, source_file="b.pdf")
+        assert result["payload_updated"] == 2
+        hits = store.search(store.embedder.embed_query("x"), top_k=10)
+        assert {h.payload["source_file"] for h in hits} == {"b.pdf"}
+
+
+class TestSourceFileName:
+    """The ``_source_file_name`` helper extracts the bare file name."""
+
+    def test_returns_basename(self):
+        assert _source_file_name("data/raw/nps-2013-10k.pdf") == "nps-2013-10k.pdf"
+
+    def test_absolute_path(self):
+        assert (
+            _source_file_name("/mnt/shared/raw/sec-form-10-k-pdf-fixture.pdf")
+            == "sec-form-10-k-pdf-fixture.pdf"
+        )
+
+    def test_windows_separator(self):
+        assert (
+            _source_file_name("C:\\\\raw\\\\n-able-2024-annual-financial-report.pdf")
+            == "n-able-2024-annual-financial-report.pdf"
+        )
+
+    def test_bare_name_is_unchanged(self):
+        assert _source_file_name("report.pdf") == "report.pdf"
+
+    def test_empty_string(self):
+        assert _source_file_name("") == ""

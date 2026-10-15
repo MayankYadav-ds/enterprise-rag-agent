@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -11,6 +12,16 @@ from rag_agent.chunking.models import Chunk
 from rag_agent.embeddings.protocol import Embedder
 
 PROJECT_NAMESPACE = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+def _source_file_name(source_file: str) -> str:
+    """Return the bare file name from a source path.
+
+    Citations only ever need the file name (``Path(source_file).name``), not
+    the relative path it was indexed from, so a renamed source file is
+    reflected without re-hydrating the chunk.
+    """
+    return Path(source_file).name if source_file else ""
 
 
 def point_id(chunk_id: str) -> uuid.UUID:
@@ -184,7 +195,12 @@ class QdrantStore:
     ) -> dict:
         """Idempotent diff-based sync for one document.
 
-        Returns ``{"upserted": int, "deleted": int, "skipped": int}``.
+        Returns ``{"upserted": int, "deleted": int, "skipped": int,
+        "payload_updated": int}``. ``payload_updated`` counts chunks that were
+        already present but whose payload (source file name, model name, page
+        range, heading, text quality or text) changed — they are patched in
+        place rather than re-embedded, so a renamed source file is reflected
+        without re-running the embedder.
         """
         existing = set(self.scroll_ids(doc_id=doc_id))
         target_ids = {point_id(c.chunk_id) for c in chunks}
@@ -209,6 +225,16 @@ class QdrantStore:
             self._client.upsert(self.collection_name, points=points)
             upserted = len(new_chunks)
 
+        # Patch payloads of chunks that already exist but whose stored payload
+        # differs from the fresh one. This is what lets a renamed source file
+        # show its new name without re-embedding the vector.
+        payload_updated = self._patch_existing_payloads(
+            doc_id=doc_id,
+            chunks=[c for c in chunks if point_id(c.chunk_id) in existing],
+            source_file=source_file,
+            model_name=embedder.model_name,
+        )
+
         stale = existing - target_ids
         deleted = 0
         if stale:
@@ -222,7 +248,93 @@ class QdrantStore:
             "upserted": upserted,
             "deleted": deleted,
             "skipped": len(chunks) - upserted,
+            "payload_updated": payload_updated,
         }
+
+    def _patch_existing_payloads(
+        self,
+        doc_id: str,
+        chunks: list[Chunk],
+        source_file: str,
+        model_name: str,
+    ) -> int:
+        """Patch the payload of existing points whose stored payload changed.
+
+        Returns the number of points patched. The vector is never touched, so
+        the cosine similarity is unchanged; only the citation metadata is
+        refreshed. This is what lets a renamed source file show its new name
+        without re-running the embedder.
+
+        ``set_payload`` replaces the whole payload with the given dict, so the
+        full fresh payload is written — not a partial merge. It is used rather
+        than ``upsert`` because Qdrant's local mode rejects points with an
+        empty vector, and re-embedding here would defeat the purpose.
+        """
+        if not chunks:
+            return 0
+        target = {point_id(c.chunk_id): self._payload(c, model_name, source_file) for c in chunks}
+        existing_payloads = self._scroll_payloads(doc_id=doc_id, ids=list(target))
+        to_patch = [
+            (point_id_, payload)
+            for point_id_, payload in target.items()
+            if existing_payloads.get(point_id_) is not None
+            and existing_payloads[point_id_] != payload
+        ]
+        if not to_patch:
+            return 0
+        # Batch the patches into a single batch_update_points call rather than
+        # one set_payload request per point. Qdrant's local mode rejects
+        # upserts with an empty vector, so the payload is patched in place
+        # with SetPayloadOperation — the vector is never touched.
+        operations = [
+            models.SetPayloadOperation(
+                set_payload=models.SetPayload(payload=payload, points=[point_id_]),
+            )
+            for point_id_, payload in to_patch
+        ]
+        self._client.batch_update_points(
+            self.collection_name,
+            update_operations=operations,
+        )
+        return len(to_patch)
+
+    def _scroll_payloads(self, doc_id: str, ids: list[uuid.UUID]) -> dict[uuid.UUID, dict]:
+        """Return ``{point_id: payload}`` for the given points of a document.
+
+        Qdrant's local mode scrolls by offset, not by point id, so the points
+        are fetched in pages and filtered by id here. Empty vectors are
+        requested so the patch pass never re-embeds anything.
+        """
+        result: dict[uuid.UUID, dict] = {}
+        if not ids:
+            return result
+        wanted = set(ids)
+        offset = None
+        scroll_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="doc_id",
+                    match=models.MatchValue(value=doc_id),
+                )
+            ]
+        )
+        while True:
+            records, next_offset = self._client.scroll(
+                self.collection_name,
+                scroll_filter=scroll_filter,
+                limit=100,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for record in records:
+                pid = _to_uuid(record.id)
+                if pid in wanted:
+                    result[pid] = record.payload or {}
+            if next_offset is None:
+                break
+            offset = next_offset
+        return result
 
     def search(
         self,
@@ -266,10 +378,15 @@ class QdrantStore:
         model_name: str,
         source_file: str,
     ) -> dict:
+        """Build the point payload for a chunk.
+
+        ``source_file`` is stored as the bare file name (``Path(source_file).name``)
+        so citations are stable across renames and re-indexes.
+        """
         return {
             "chunk_id": chunk.chunk_id,
             "doc_id": chunk.doc_id,
-            "source_file": source_file,
+            "source_file": _source_file_name(source_file),
             "chunk_type": chunk.chunk_type,
             "page_start": chunk.page_start,
             "page_end": chunk.page_end,
