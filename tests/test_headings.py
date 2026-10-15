@@ -140,6 +140,71 @@ def test_attach_headings_empty_chunks():
     assert result == []
 
 
+def test_attach_headings_parenthesised_table_label_ignored():
+    """Parenthesised table labels such as "(a) Convertible Notes" are not headings."""
+    pages = [_page(1, "note text", headings=["(a) Convertible Notes"])]
+    chunks = [_chunk(0, 1, 1)]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading is None
+
+
+def test_attach_headings_in_thousands_label_ignored():
+    """ "(In thousands)" is a table scale label, not a heading."""
+    pages = [_page(1, "table text", headings=["(In thousands)"])]
+    chunks = [_chunk(0, 1, 1)]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading is None
+
+
+def test_attach_headings_year_range_header_ignored():
+    """ "Years ended December 31, 2013 and 2012" is a table column header."""
+    pages = [_page(1, "table text", headings=["Years ended December 31, 2013 and 2012"])]
+    chunks = [_chunk(0, 1, 1)]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading is None
+
+
+def test_attach_headings_as_of_label_ignored():
+    """ "As of December 31, 2013: Level 1 Level 2 ..." is a table header."""
+    pages = [
+        _page(
+            1,
+            "table text",
+            headings=["As of December 31, 2013: Level 1 Level 2 Level 3 Total"],
+        )
+    ]
+    chunks = [_chunk(0, 1, 1)]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading is None
+
+
+def test_attach_headings_company_name_ignored():
+    """The company's own legal name is a running header, not a section heading."""
+    pages = [
+        _page(1, "balance sheet", headings=["NPS PHARMACEUTICALS, INC."]),
+        _page(2, "balance sheet", headings=["NPS PHARMACEUTICALS, INC. AND SUBSIDIARIES"]),
+    ]
+    chunks = [_chunk(0, 1, 1), _chunk(1, 2, 2)]
+    result = attach_headings(chunks, pages)
+    assert all(c.section_heading is None for c in result)
+
+
+def test_attach_headings_company_suffix_does_not_kill_real_headings():
+    """A heading ending in a legal suffix that is not the company name survives.
+
+    "Report of Independent Registered Public Accounting Firm" ends with
+    "Firm", not a legal suffix, so it is a real section heading.
+    """
+    pages = [
+        _page(
+            1, "report text", headings=["Report of Independent Registered Public Accounting Firm"]
+        )
+    ]
+    chunks = [_chunk(0, 1, 1)]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "Report of Independent Registered Public Accounting Firm"
+
+
 def test_all_strategies_get_headings():
     """All three chunking strategies receive headings through the pipeline."""
     pages = [
