@@ -315,11 +315,19 @@ def _strip_non_printing_characters(text: str) -> str:
     )
 
 
-_HEADING_PATTERN_ITEM = re.compile(r"^Item\s+\d+[A-Z]?\.\s+\S", re.IGNORECASE)
+_HEADING_PATTERN_ITEM = re.compile(r"^Item\s+\d+[A-C]?\.\s+\S", re.IGNORECASE)
 # Table column headers ("Years Ended December 31,") and row labels
 # ("2013 2012 2011 2010 2009 (in thousands)") are bold but are not
 # section headings; they are table content.
 _HEADING_PATTERN_TABLE_LABEL = re.compile(r",$|^\d{4}(\s+\d{4})+\s+\(")
+# SEC "Item NN. Title" lines are rendered at body font size, so they are
+# recognised by pattern rather than by font size alone. Their full titles can
+# exceed the normal cap ("ITEM 7. MANAGEMENT'S DISCUSSION AND ANALYSIS OF
+# FINANCIAL CONDITION AND RESULTS OF OPERATIONS" is 93 characters), so such
+# lines are exempt from MAX_HEADING_LENGTH and capped at
+# MAX_ITEM_HEADING_LENGTH instead. A long line without an "Item NN." prefix is
+# still rejected (cover-page titles such as "FORM 10-K ...").
+_MAX_ITEM_HEADING_LENGTH = 160
 
 
 def _detect_headings(blocks: list[_TextBlock]) -> list[str]:
@@ -341,7 +349,15 @@ def _detect_headings(blocks: list[_TextBlock]) -> list[str]:
         is_large = block_size >= baseline_size * 1.25
         is_emphasised = block.has_bold_span and block_size > baseline_size
         candidate = clean_text(block.text)
-        if not candidate or candidate in headings or len(candidate) > MAX_HEADING_LENGTH:
+        # "Item NN. Title" lines are exempt from the normal cap; everything
+        # else is still capped at MAX_HEADING_LENGTH, so long cover-page
+        # titles without an Item prefix stay rejected.
+        cap = (
+            _MAX_ITEM_HEADING_LENGTH
+            if _HEADING_PATTERN_ITEM.match(candidate)
+            else MAX_HEADING_LENGTH
+        )
+        if not candidate or candidate in headings or len(candidate) > cap:
             continue
         if _HEADING_PATTERN_TABLE_LABEL.match(candidate):
             continue
