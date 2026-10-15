@@ -15,7 +15,7 @@ To download the NPS filing from PowerShell:
 
 ```powershell
 curl.exe --fail --location --user-agent "enterprise-rag-agent/0.1 contact: you@example.com" `
-  --output data/raw/sec-form-10-k.pdf `
+  --output data/raw/nps-pharmaceuticals-2013-10k.pdf `
   https://www.sec.gov/Archives/edgar/data/890465/000113626114000082/form10-k.pdf
 ```
 
