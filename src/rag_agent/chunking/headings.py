@@ -35,7 +35,6 @@ def _is_valid_heading(heading: str) -> bool:
     - Must not be empty
     - Must not exceed MAX_HEADING_LENGTH
     - Must not be a table label (e.g., "Consolidated Balance Sheets Data:")
-    - Must not be a duplicate
     """
     if not heading:
         return False
