@@ -10,10 +10,16 @@ from __future__ import annotations
 
 import contextlib
 import io
+import sys
 from pathlib import Path
 
 import pytest
-from scripts.heading_report import _chunk_payloads_from_pdf, report
+
+# scripts/ is not an importable package and the repo root is not on sys.path
+# in CI, so add it explicitly before importing the report helpers.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from scripts.heading_report import _chunk_payloads_from_pdf, report  # noqa: E402
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_report.pdf"
 
