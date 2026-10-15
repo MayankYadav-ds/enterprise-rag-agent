@@ -17,6 +17,7 @@ from rag_agent.chunking.config import (
     DEFAULT_CHUNK_SIZE,
     LOW_TEXT_QUALITY_THRESHOLD,
 )
+from rag_agent.chunking.headings import attach_headings
 from rag_agent.chunking.models import Chunk
 from rag_agent.ingestion.models import Document, PageContent
 from rag_agent.ingestion.pipeline import ingest_pdf
@@ -64,6 +65,7 @@ def chunk_document(
 
     chunking_strategy = strategy_map[strategy](chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     chunks = chunking_strategy.chunk(kept_pages, document.doc_id)
+    chunks = attach_headings(chunks, kept_pages)
     return [_with_source_text_quality(chunk, kept_pages) for chunk in chunks]
 
 
