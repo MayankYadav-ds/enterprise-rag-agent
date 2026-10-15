@@ -134,6 +134,11 @@ traced back to the PDF it came from without re-hydrating the chunk.
   headings — page 22 of the N-able 10-K has `headings: ['ITEM 1A. RISK FACTORS']`
   — but the default chunking strategy is `recursive`, which ignores page-level
   headings entirely. Only `structure_aware` propagates them. See issue #25.
+  **Resolved (PR #1a):** `chunk_document()` now calls `attach_headings(chunks,
+  pages)` after the strategy chunks, so all three strategies get a
+  `section_heading` — the nearest preceding heading carried forward across
+  pages of the same document. Re-running the chunker on the real PDFs gives
+  236/243 heading-bearing chunks for N-able and 300/300 for NPS.
 - **The royalties query returns three very similar scores** (0.7165, 0.7157,
   0.7155). The top hit is on page 58 of the NPS fixture, but the other two are
   a table row on page 45 and an accounting note on page 72 — the dense model
@@ -164,6 +169,34 @@ traced back to the PDF it came from without re-hydrating the chunk.
 - **`docker compose up -d` prints "Container ... Running" to stderr** even on
   success, and PowerShell promotes that into a terminating error. The script
   temporarily continues on error and relies on the exit code instead.
+
+## Renaming a source file (no re-embedding)
+
+The fixture PDF `data/raw/sec-form-10-k-pdf-fixture.pdf` was renamed to
+`nps-pharmaceuticals-2013-10k.pdf` before re-indexing. Re-running the indexer
+without `--recreate` produced:
+
+```
+2 documents, 0 chunks indexed, 543 skipped unchanged, 543 payload updated, 0 stale deleted, 60.24s total.
+```
+
+Every one of the 543 chunks was already present, so nothing was upserted and
+nothing stale was deleted — but all 543 payloads were patched in place with
+`batch_update_points` + `SetPayloadOperation`, so the citation now shows the
+new file name:
+
+```
+source='nps-pharmaceuticals-2013-10k.pdf' doc_id=doc_7ad9
+```
+
+The vectors were never touched, so the cosine similarities are byte-for-byte
+identical to the original run. The smoke queries returned the same nine hits
+with the same scores; only the `source` field changed.
+
+The `sync` method now returns a fourth key, `payload_updated`, and
+`scripts/index_documents.py` reports it in both the per-document line and the
+summary. A fresh `--recreate` run still shows `0 payload updated`, and a second
+idempotent run after recreate also shows `0` (the payload is already identical).
 
 ## Status
 
