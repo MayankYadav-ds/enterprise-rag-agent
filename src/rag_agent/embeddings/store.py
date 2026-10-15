@@ -17,11 +17,15 @@ PROJECT_NAMESPACE = uuid.UUID("00000000-0000-0000-0000-000000000001")
 def _source_file_name(source_file: str) -> str:
     """Return the bare file name from a source path.
 
-    Citations only ever need the file name (``Path(source_file).name``), not
-    the relative path it was indexed from, so a renamed source file is
-    reflected without re-hydrating the chunk.
+    Citations only ever need the file name, not the relative path it was
+    indexed from, so a renamed source file is reflected without re-hydrating
+    the chunk. Backslashes are normalised to forward slashes first: on a
+    POSIX host ``Path("C:\\\\raw\\\\x.pdf").name`` returns the whole string,
+    because the backslash is not a separator there.
     """
-    return Path(source_file).name if source_file else ""
+    if not source_file:
+        return ""
+    return Path(source_file.replace("\\", "/")).name
 
 
 def point_id(chunk_id: str) -> uuid.UUID:
