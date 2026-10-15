@@ -269,10 +269,11 @@ class QdrantStore:
         refreshed. This is what lets a renamed source file show its new name
         without re-running the embedder.
 
-        ``set_payload`` replaces the whole payload with the given dict, so the
-        full fresh payload is written — not a partial merge. It is used rather
-        than ``upsert`` because Qdrant's local mode rejects points with an
-        empty vector, and re-embedding here would defeat the purpose.
+        The full fresh payload is written — not a partial merge. It is sent as a
+        single ``batch_update_points`` call of ``SetPayloadOperation``s rather
+        than one request per point, and it is used rather than ``upsert`` because
+        Qdrant's local mode rejects points with an empty vector, and
+        re-embedding here would defeat the purpose.
         """
         if not chunks:
             return 0
