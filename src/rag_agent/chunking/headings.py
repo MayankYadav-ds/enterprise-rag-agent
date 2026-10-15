@@ -42,8 +42,20 @@ _HEADING_PATTERN_COMPANY = re.compile(
     re.IGNORECASE,
 )
 
+# SEC filings label sections with "Item NN. Title" (e.g. "Item 1A. Risk
+# Factors", "Item 7. Management's Discussion"). These are real section
+# headings even when rendered at body font size, and their full titles can
+# exceed the normal cap ("ITEM 7. MANAGEMENT'S DISCUSSION AND ANALYSIS OF
+# FINANCIAL CONDITION AND RESULTS OF OPERATIONS"). Such lines are exempt
+# from the 60-character cap and are allowed up to _MAX_ITEM_HEADING_LENGTH.
+_HEADING_PATTERN_ITEM = re.compile(r"^ITEM\s+\d+[A-C]?\.\s*\S", re.IGNORECASE)
+
 # Maximum heading length (from ingestion pdf_parser.MAX_HEADING_LENGTH)
 _MAX_HEADING_LENGTH = 60
+# Item titles are allowed to be longer; a bare cover-page line without an
+# "Item NN." prefix is still capped at _MAX_HEADING_LENGTH.
+_MAX_ITEM_HEADING_LENGTH = 160
+# Item titles are exempt from the 60-character cap (see above).
 
 
 def _is_table_label(heading: str) -> bool:
@@ -61,12 +73,23 @@ def _is_company_name(heading: str) -> bool:
     return bool(_HEADING_PATTERN_COMPANY.search(heading.strip()))
 
 
+def _is_item_heading(heading: str) -> bool:
+    """Return True if the heading is an SEC "Item NN. Title" line.
+
+    Such lines are exempt from the 60-character cap (their full titles can
+    exceed it, e.g. "ITEM 7. MANAGEMENT'S DISCUSSION AND ANALYSIS OF
+    FINANCIAL CONDITION AND RESULTS OF OPERATIONS").
+    """
+    return bool(_HEADING_PATTERN_ITEM.match(heading.strip()))
+
+
 def _is_valid_heading(heading: str) -> bool:
     """Return True if the heading passes the validation rules.
 
     Rules (from Phase 3 / ingestion pdf_parser):
     - Must not be empty
-    - Must not exceed MAX_HEADING_LENGTH
+    - Must not exceed the length cap (60 chars, or 160 for "Item NN. Title"
+      lines, which are exempt because their full titles are long)
     - Must not be a table label (e.g., "Consolidated Balance Sheets Data:")
     - Must not be the company's own legal name (running header)
     """
@@ -75,7 +98,8 @@ def _is_valid_heading(heading: str) -> bool:
     stripped = heading.strip()
     if not stripped:
         return False
-    if len(stripped) > _MAX_HEADING_LENGTH:
+    cap = _MAX_ITEM_HEADING_LENGTH if _is_item_heading(stripped) else _MAX_HEADING_LENGTH
+    if len(stripped) > cap:
         return False
     if _is_table_label(stripped):
         return False

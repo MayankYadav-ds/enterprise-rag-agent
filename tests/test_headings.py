@@ -218,3 +218,66 @@ def test_all_strategies_get_headings():
         heading_chunks = [c for c in chunks if c.section_heading is not None]
         assert heading_chunks, f"{strategy.__name__} produced no chunks with a heading"
         assert all(c.section_heading == "ITEM 1. Business" for c in heading_chunks)
+
+
+def test_attach_headings_long_item_title_accepted():
+    """SEC "Item NN. Title" lines are exempt from the 60-character cap.
+
+    Their full titles can exceed it, e.g. "ITEM 7. MANAGEMENT'S DISCUSSION AND
+    ANALYSIS OF FINANCIAL CONDITION AND RESULTS OF OPERATIONS".
+    """
+    long_title = (
+        "ITEM 7. MANAGEMENT'S DISCUSSION AND ANALYSIS OF FINANCIAL CONDITION "
+        "AND RESULTS OF OPERATIONS"
+    )
+    pages = [_page(1, "md&a text", headings=[long_title])]
+    chunks = [_chunk(0, 1, 1)]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == long_title
+
+
+def test_attach_headings_long_item_7a_title_accepted():
+    pages = [
+        _page(
+            1,
+            "market risk text",
+            headings=["ITEM 7A. QUANTITATIVE AND QUALITATIVE DISCLOSURES ABOUT MARKET RISK"],
+        )
+    ]
+    chunks = [_chunk(0, 1, 1)]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == (
+        "ITEM 7A. QUANTITATIVE AND QUALITATIVE DISCLOSURES ABOUT MARKET RISK"
+    )
+
+
+def test_attach_headings_long_item_9_title_accepted():
+    pages = [_page(1, "controls text", headings=["ITEM 9A. CONTROLS AND PROCEDURES"])]
+    chunks = [_chunk(0, 1, 1)]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "ITEM 9A. CONTROLS AND PROCEDURES"
+
+
+def test_attach_headings_long_item_5_title_accepted():
+    pages = [_page(1, "properties text", headings=["ITEM 5. MINE SAFETY DISCLOSURES"])]
+    chunks = [_chunk(0, 1, 1)]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "ITEM 5. MINE SAFETY DISCLOSURES"
+
+
+def test_attach_headings_long_non_item_line_still_rejected():
+    """A long line without an "Item NN." prefix is still capped at 60 chars."""
+    long_cover = "X" * 100
+    pages = [_page(1, "cover text", headings=[long_cover])]
+    chunks = [_chunk(0, 1, 1)]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading is None
+
+
+def test_attach_headings_item_title_too_long_rejected():
+    """Even "Item NN." lines are capped at 160 characters."""
+    too_long = "ITEM 7. " + "X" * 200
+    pages = [_page(1, "text", headings=[too_long])]
+    chunks = [_chunk(0, 1, 1)]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading is None
