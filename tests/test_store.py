@@ -390,10 +390,19 @@ class TestSourceFileName:
         )
 
     def test_windows_separator(self):
+        """Backslash paths resolve on every platform, not just Windows.
+
+        On a POSIX host ``Path("C:\\\\raw\\\\x.pdf").name`` returns the whole
+        string because the backslash is not a separator there, so the
+        normalisation must happen before the ``Path`` call.
+        """
         assert (
             _source_file_name("C:\\\\raw\\\\n-able-2024-annual-financial-report.pdf")
             == "n-able-2024-annual-financial-report.pdf"
         )
+        # The result must never contain a backslash, even on a POSIX host
+        # where Path would otherwise leave it untouched.
+        assert "\\" not in _source_file_name("C:\\\\raw\\\\n-able-2024-annual-financial-report.pdf")
 
     def test_bare_name_is_unchanged(self):
         assert _source_file_name("report.pdf") == "report.pdf"
