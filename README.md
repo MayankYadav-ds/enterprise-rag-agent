@@ -75,7 +75,10 @@ python scripts/index_documents.py --input data/raw --strategy recursive --recrea
 
 Re-running the command is idempotent: chunks whose IDs already exist are skipped,
 and points removed from the document are deleted, so a re-index only ever
-upserts what changed.
+upserts what changed. Chunks that already exist but whose payload changed — a
+renamed source file, a different model name, or refreshed page/heading/quality
+metadata — are patched in place, so a renamed source file is reflected without
+re-embedding the vector.
 
 ### Docker (recommended)
 
