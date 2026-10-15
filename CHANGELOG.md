@@ -2,6 +2,9 @@
 
 ## [Phase 4 — embeddings and Qdrant] — in progress on feat/embeddings-qdrant
 
+- **fix(store):** `source_file` is now stored as the bare file name (`Path(source_file).name`) instead of the indexed relative path, so a renamed source file is reflected without re-hydrating the chunk. Verified on the real run: renaming `sec-form-10-k-pdf-fixture.pdf` to `nps-pharmaceuticals-2013-10k.pdf` and re-indexing without `--recreate` patched all 300 of its chunks in place.
+- **feat(store):** `sync` returns a fourth key, `payload_updated`, and patches the payload of chunks that already exist but whose stored payload changed (renamed source file, refreshed metadata) with `batch_update_points` + `SetPayloadOperation` — the vector is never touched, so the cosine similarity is unchanged and nothing is re-embedded. `scripts/index_documents.py` reports it in the per-document line and the summary.
+
 - **feat(embeddings):** `SentenceTransformerEmbedder` backed by BAAI/bge-small-en-v1.5, with the bge instruction prefix on queries and L2-normalised output.
 - **feat(embeddings):** `QdrantStore` with cosine vectors, UUID5 point IDs, payload keyword indexes, `search` with `doc_id`/`chunk_type` filters, and a diff-based `sync` that returns `{"upserted", "deleted", "skipped"}` and never touches another document's points.
 - **feat(embeddings):** `count_model_tokens` / `model_token_stats` measure the real WordPiece token length of any chunk set against the model's 512-token limit.
