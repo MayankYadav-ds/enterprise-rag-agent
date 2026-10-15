@@ -99,7 +99,14 @@ flowchart LR
 - Each point carries a payload with `chunk_id`, `doc_id`, `source_file`,
   `chunk_type`, `page_start`, `page_end`, `section_heading`, `text_quality`,
   `token_count`, `text` and `embedding_model`, so citations can be answered from
-  Qdrant without re-hydrating chunks.
+  Qdrant without re-hydrating chunks. `source_file` is stored as the bare file
+  name, so a renamed source file is reflected without re-hydrating the chunk.
+- The diff-based sync returns `{"upserted", "deleted", "skipped",
+  "payload_updated"}`. Chunks that already exist but whose payload changed
+  (a renamed source file, a different model name, or refreshed page/heading/
+  quality/text metadata) are patched in place with `batch_update_points` and
+  `SetPayloadOperation` — the vector is never touched, so the cosine similarity
+  is unchanged and nothing is re-embedded.
 - The model silently truncates text beyond 512 WordPiece tokens, so chunk size
   was lowered from 512/50 to 400/39. See [`docs/TOKEN_LIMIT_REPORT.md`](TOKEN_LIMIT_REPORT.md).
 
