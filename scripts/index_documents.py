@@ -95,6 +95,7 @@ def index_documents() -> int:
     total_chunks = 0
     total_skipped = 0
     total_deleted = 0
+    total_payload_updated = 0
 
     for pdf_path in pdf_paths:
         doc_start = perf_counter()
@@ -120,12 +121,15 @@ def index_documents() -> int:
         total_chunks += result["upserted"]
         total_skipped += result["skipped"]
         total_deleted += result["deleted"]
+        total_payload_updated += result["payload_updated"]
         logger.info(
-            "Indexed %s: %d chunks (%d upserted, %d skipped, %d stale) in %.2fs",
+            "Indexed %s: %d chunks (%d upserted, %d skipped, %d payload updated, "
+            "%d stale) in %.2fs",
             pdf_path.name,
             len(chunks),
             result["upserted"],
             result["skipped"],
+            result["payload_updated"],
             result["deleted"],
             elapsed,
         )
@@ -133,10 +137,11 @@ def index_documents() -> int:
     elapsed = perf_counter() - started_at
     logger.info(
         "Summary: %d documents, %d chunks indexed, %d skipped unchanged, "
-        "%d stale deleted, %.2fs total.",
+        "%d payload updated, %d stale deleted, %.2fs total.",
         total_docs,
         total_chunks,
         total_skipped,
+        total_payload_updated,
         total_deleted,
         elapsed,
     )
