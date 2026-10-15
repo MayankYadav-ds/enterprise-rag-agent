@@ -29,9 +29,9 @@ def run_smoke_queries(
     stored text. The snippet is truncated in place so callers never receive
     more than 100 characters of payload text.
 
-    ``source_file`` is the PDF the hit came from and ``doc_id_prefix`` is the
-    first 8 characters of the document id, so a hit can be traced back to its
-    source without re-hydrating the chunk.
+    ``source_file`` is the bare file name of the PDF the hit came from and
+    ``doc_id_prefix`` is the first 8 characters of the document id, so a hit
+    can be traced back to its source without re-hydrating the chunk.
     """
     results: list[dict] = []
     for query in queries:
