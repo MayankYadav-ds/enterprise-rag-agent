@@ -10,6 +10,9 @@ score, page range, section heading and a 100-character snippet for every hit.
 The shared logic lives in ``rag_agent.embeddings.smoke`` and is unit-tested in
 tests/test_smoke_queries.py with a FakeEmbedder and an in-memory Qdrant
 collection, so the code path is covered without a model download.
+
+``source_file`` is stored as the bare file name, so a renamed source file is
+reflected without re-hydrating the chunk.
 """
 
 from __future__ import annotations
