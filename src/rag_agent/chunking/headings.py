@@ -17,7 +17,30 @@ from rag_agent.ingestion.models import PageContent
 # ("2013 2012 2011 2010 2009 (in thousands)") are bold but are not
 # section headings; they are table content. "Consolidated Balance Sheets
 # Data:" is the same class of label: it names a table, not a section.
-_HEADING_PATTERN_TABLE_LABEL = re.compile(r",$|^\d{4}(\s+\d{4})+\s+\(|Data:$")
+# The same class also covers parenthesised table labels ("(a) Convertible
+# Notes", "(i) Research and Development Expenses", "(In thousands)",
+# "(13) Income Taxes") and year-range column headers ("Years ended December
+# 31, 2013 and 2012", "As of December 31, 2013: Level 1 Level 2 ...").
+_HEADING_PATTERN_TABLE_LABEL = re.compile(
+    r",$"  # trailing comma: table row labels
+    r"|^\d{4}(\s+\d{4})+\s+\("  # "2013 2012 2011 2010 2009 (in thousands)"
+    r"|Data:$"  # "Consolidated Balance Sheets Data:"
+    r"|\d{4} and \d{4}$"  # "Years ended December 31, 2013 and 2012"
+    r"|^\s*\("  # "(a) Convertible Notes", "(In thousands)"
+    r"|^Years ended "  # "Years ended December 31, 2013 and 2012"
+    r"|^As of "  # "As of December 31, 2013: Level 1 Level 2 Level 3 Total"
+)
+
+# The company name ("NPS PHARMACEUTICALS, INC.", "..., INC. AND
+# SUBSIDIARIES") is a running header on financial statement pages, not a
+# section heading. Only the trailing legal suffix is checked so that real
+# section headings are not rejected (e.g. "Report of Independent Registered
+# Public Accounting Firm" ends with "Firm", not a legal suffix).
+_HEADING_PATTERN_COMPANY = re.compile(
+    r"\b(INC\.?|CORP\.?|CORPORATION|LLC\.?|LTD\.?|LIMITED|CO\.?|COMPANY)\.?$"
+    r"|\bAND\s+SUBSIDIARIES\.?$",
+    re.IGNORECASE,
+)
 
 # Maximum heading length (from ingestion pdf_parser.MAX_HEADING_LENGTH)
 _MAX_HEADING_LENGTH = 60
@@ -28,6 +51,16 @@ def _is_table_label(heading: str) -> bool:
     return bool(_HEADING_PATTERN_TABLE_LABEL.search(heading.strip()))
 
 
+def _is_company_name(heading: str) -> bool:
+    """Return True if the heading is the company's own legal name.
+
+    The company name is a running header on financial statement pages, not a
+    section heading (e.g. "NPS PHARMACEUTICALS, INC.",
+    "NPS PHARMACEUTICALS, INC. AND SUBSIDIARIES").
+    """
+    return bool(_HEADING_PATTERN_COMPANY.search(heading.strip()))
+
+
 def _is_valid_heading(heading: str) -> bool:
     """Return True if the heading passes the validation rules.
 
@@ -35,6 +68,7 @@ def _is_valid_heading(heading: str) -> bool:
     - Must not be empty
     - Must not exceed MAX_HEADING_LENGTH
     - Must not be a table label (e.g., "Consolidated Balance Sheets Data:")
+    - Must not be the company's own legal name (running header)
     """
     if not heading:
         return False
@@ -44,6 +78,8 @@ def _is_valid_heading(heading: str) -> bool:
     if len(stripped) > _MAX_HEADING_LENGTH:
         return False
     if _is_table_label(stripped):
+        return False
+    if _is_company_name(stripped):
         return False
     return True
 
