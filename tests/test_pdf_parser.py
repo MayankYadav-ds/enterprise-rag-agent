@@ -135,3 +135,87 @@ def test_detect_headings_rejects_long_all_caps_cover_lines() -> None:
     headings = _detect_headings(blocks)
 
     assert headings == ["Financial Overview"]
+
+
+def test_detect_headings_accepts_long_item_titles() -> None:
+    """SEC "Item NN. Title" lines are exempt from the 60-character cap.
+
+    Their full titles exceed it, e.g. "ITEM 7. MANAGEMENT'S DISCUSSION AND
+    ANALYSIS OF FINANCIAL CONDITION AND RESULTS OF OPERATIONS" (93 chars).
+    """
+    from rag_agent.ingestion.pdf_parser import _detect_headings
+
+    blocks = [
+        _TextBlock(36, 240, 500, 260, "Body text at normal size.", (11,), False),
+        _TextBlock(
+            36,
+            300,
+            500,
+            320,
+            "ITEM 7. MANAGEMENT'S DISCUSSION AND ANALYSIS OF FINANCIAL CONDITION "
+            "AND RESULTS OF OPERATIONS",
+            (10,),
+            False,
+        ),
+        _TextBlock(36, 360, 500, 380, "More body text at normal size.", (11,), False),
+        _TextBlock(
+            36,
+            420,
+            500,
+            440,
+            "ITEM 7A. QUANTITATIVE AND QUALITATIVE DISCLOSURES ABOUT MARKET RISK",
+            (10,),
+            False,
+        ),
+        _TextBlock(36, 480, 500, 500, "ITEM 9A. CONTROLS AND PROCEDURES", (10,), False),
+        _TextBlock(36, 540, 500, 560, "ITEM 5. MINE SAFETY DISCLOSURES", (10,), False),
+    ]
+
+    headings = _detect_headings(blocks)
+
+    assert headings == [
+        "ITEM 7. MANAGEMENT'S DISCUSSION AND ANALYSIS OF FINANCIAL CONDITION "
+        "AND RESULTS OF OPERATIONS",
+        "ITEM 7A. QUANTITATIVE AND QUALITATIVE DISCLOSURES ABOUT MARKET RISK",
+        "ITEM 9A. CONTROLS AND PROCEDURES",
+        "ITEM 5. MINE SAFETY DISCLOSURES",
+    ]
+
+
+def test_detect_headings_rejects_long_non_item_lines() -> None:
+    """A long line without an "Item NN." prefix is still capped at 60 chars."""
+    from rag_agent.ingestion.pdf_parser import _detect_headings
+
+    blocks = [
+        _TextBlock(36, 240, 500, 260, "Body text at normal size.", (11,), False),
+        _TextBlock(
+            36,
+            300,
+            500,
+            320,
+            "FORM 10-K ANNUAL REPORT PURSUANT TO SECTION 13 OF THE SECURITIES "
+            "EXCHANGE ACT OF 1934",
+            (30,),
+            False,
+        ),
+        _TextBlock(36, 360, 500, 380, "More body text at normal size.", (11,), False),
+    ]
+
+    headings = _detect_headings(blocks)
+
+    assert headings == []
+
+
+def test_detect_headings_item_title_too_long_rejected() -> None:
+    """Even "Item NN." lines are capped at 160 characters."""
+    from rag_agent.ingestion.pdf_parser import _detect_headings
+
+    blocks = [
+        _TextBlock(36, 240, 500, 260, "Body text at normal size.", (11,), False),
+        _TextBlock(36, 300, 500, 320, "ITEM 7. " + "X" * 200, (10,), False),
+        _TextBlock(36, 360, 500, 380, "More body text at normal size.", (11,), False),
+    ]
+
+    headings = _detect_headings(blocks)
+
+    assert headings == []
