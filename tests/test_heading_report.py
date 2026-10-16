@@ -66,8 +66,10 @@ def test_report_counts_chunks_with_and_without_headings() -> None:
     assert output.count("\n===") == 2  # two documents printed
     assert "chunks=2 with_heading=1 without_heading=1" in output
     assert "chunks=1 with_heading=1 without_heading=0" in output
-    assert "p1-1" in output
-    assert "p3-3" in output
+    assert "first=p1" in output
+    assert "last=p1" in output
+    assert "first=p3" in output
+    assert "last=p3" in output
 
 
 def test_main_from_pdf_prints_per_document_coverage(tmp_path: Path) -> None:
