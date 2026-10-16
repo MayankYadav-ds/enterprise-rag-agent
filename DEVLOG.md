@@ -24,6 +24,17 @@ I built a page-aware PDF ingestion path around deterministic SHA-256 document ID
 
 **Future work.** Track the known limitations in [#12](https://github.com/MayankYadav-ds/enterprise-rag-agent/issues/12) (superscript footnotes fused into values), [#13](https://github.com/MayankYadav-ds/enterprise-rag-agent/issues/13) (fragmented unruled financial tables), [#14](https://github.com/MayankYadav-ds/enterprise-rag-agent/issues/14) (alternate extractor or OCR fallback for broken font mappings), and [#15](https://github.com/MayankYadav-ds/enterprise-rag-agent/issues/15) (broader multi-column/sidebar validation). I also plan to render representative pages in automated validation and add safer exceptions for repeated headings that are meaningful page titles.
 
+## Phase 2 follow-up: ITEM headings exempt from the heading length cap
+
+The heading detector in `pdf_parser._detect_headings` rejected the 60-character length cap **before** it checked the "Item NN. Title" pattern, so long SEC item titles were dropped at ingestion and never reached the chunker. The worst visible symptom was `ITEM 6. RESERVED` (N-able page 57) inheriting 26 chunks: with Item 7 missing, the carry-forward stopped at page 57 and every later chunk was mislabelled.
+
+After the fix (commits `d634574` and `61352ab`, applied at both layers), Item titles are capped at 160 characters in ingestion and in `chunking.headings._is_valid_heading`, while everything else stays at 60 — so long cover-page lines without an Item prefix are still rejected. On the real run:
+
+- **N-able:** `ITEM 7. MANAGEMENT'S DISCUSSION AND ANALYSIS OF FINANCIAL CONDITION AND RESULTS OF OPERATIONS` (93 chars) now covers 21 chunks on p58-73; `ITEM 7A` 4 chunks p74; `ITEM 9A` 3 chunks p75; `ITEM 9C` 3 chunks p76; `ITEM 5` 2 chunks p56; `ITEM 14` 2 chunks p77. `ITEM 6. RESERVED` dropped from 26 chunks to 1 (p57). 236 of 243 chunks carry a heading; 7 do not.
+- **NPS:** 300 of 300 chunks carry a heading, but several labels are table headers and statement titles rather than section headings — `Product and Development Programs` (67 chunks, p5-p25), `Consolidated Statements of Stockholders' Equity (Deficit)` (38, p68-p79), `Proceeds from Available for Sale Securities` (37, p82-p94). NPS has no `ITEM 5` or `ITEM 7` heading: p48-p60 are labelled `Results of Operations` (41 chunks), and the `ITEM 8` title wraps over two lines so each line fails separately.
+
+The smoke query "How does the company earn royalties?" now returns a p72 hit cited under `Consolidated Statements of Stockholders' Equity (Deficit)`, which is wrong — the label is a statement title, not the section the answer lives in. That is tracked as a known limitation.
+
 ## Phase 3 — Chunking Strategies
 
 I implemented three chunking strategies behind a common interface: fixed-size with overlap, recursive (paragraph-sentence-word fallback), and structure-aware (heading-based splitting). All strategies share common rules for table handling, quality filtering, and deterministic ID generation.
