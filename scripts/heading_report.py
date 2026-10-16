@@ -126,7 +126,9 @@ def report(payloads: list[dict], top_k: int, source_label: str) -> None:
         )
         print(f"top {len(ranked)} section_heading values:")
         for heading, pages in ranked:
-            print(f"  {len(pages):4d}  p{min(pages)}-{max(pages)}  {heading!r}")
+            first_page = min(pages)
+            last_page = max(pages)
+            print(f"  {len(pages):4d}  first=p{first_page}  last=p{last_page}  {heading!r}")
 
 
 def main() -> int:
