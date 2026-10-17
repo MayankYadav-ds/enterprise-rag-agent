@@ -90,6 +90,7 @@ def _chunk_payloads_from_pdf(pdf_path: Path) -> list[dict]:
             "page_start": c.page_start,
             "page_end": c.page_end,
             "section_heading": c.section_heading,
+            "subheading": getattr(c, "subheading", None),
             "token_count": c.token_count,
             "text_quality": c.text_quality,
             "text": c.text,
