@@ -17,6 +17,7 @@ class Chunk:
     page_start: int
     page_end: int
     section_heading: str | None = None
+    subheading: str | None = None
     token_count: int = 0
     text_quality: float = 1.0
     chunk_index: int = 0
@@ -31,6 +32,7 @@ class Chunk:
         page_end: int,
         chunk_index: int,
         section_heading: str | None = None,
+        subheading: str | None = None,
         tokenizer=None,
     ) -> Chunk:
         """Create a chunk with deterministic ID and computed token count.
