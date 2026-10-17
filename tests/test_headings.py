@@ -265,6 +265,140 @@ def test_attach_headings_long_item_5_title_accepted():
     assert result[0].section_heading == "ITEM 5. MINE SAFETY DISCLOSURES"
 
 
+def test_attach_headings_item_inside_chunk_span():
+    """A chunk whose text span contains an ITEM heading takes that heading.
+
+    This is the N-able p75 pattern: the chunk starts mid-page after the last
+    preceding ITEM heading (so carry-forward would give the wrong answer) but
+    its span includes a later ITEM heading on the same page.
+    """
+    pages = [
+        _page(
+            1,
+            "ITEM 1. Business\n\nITEM 7A. Market Risk\n\nmore text here\n\n"
+            "ITEM 8. Financial Statements\n\nbody text of item 8",
+            headings=[
+                "ITEM 1. Business",
+                "ITEM 7A. Market Risk",
+                "ITEM 8. Financial Statements",
+            ],
+        ),
+    ]
+    # Chunk starts after ITEM 7A but its span includes ITEM 8.
+    chunks = [
+        _chunk(
+            0, 1, 1, text="more text here\n\nITEM 8. Financial Statements\n\nbody text of item 8"
+        ),
+    ]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "ITEM 8. Financial Statements"
+
+
+def test_attach_headings_item_inside_chunk_span_preferred_over_carry_forward():
+    """An ITEM heading inside the chunk beats carry-forward from an earlier page.
+
+    Even though an earlier page has a later ITEM heading, the heading inside
+    the chunk's own span names its section.
+    """
+    pages = [
+        _page(1, "ITEM 5. Properties", headings=["ITEM 5. Properties"]),
+        _page(
+            2,
+            "ITEM 6. Business\n\nbody of item 6",
+            headings=["ITEM 6. Business"],
+        ),
+    ]
+    chunks = [
+        _chunk(0, 1, 1, text="ITEM 5. Properties"),
+        _chunk(1, 2, 2, text="ITEM 6. Business\n\nbody of item 6"),
+    ]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "ITEM 5. Properties"
+    assert result[1].section_heading == "ITEM 6. Business"
+
+
+def test_attach_headings_chunk_spanning_pages():
+    """A chunk spanning two pages takes the heading from its first page."""
+    pages = [
+        _page(1, "ITEM 1. Business\n\npage one body", headings=["ITEM 1. Business"]),
+        _page(2, "page two body", headings=[]),
+    ]
+    chunks = [
+        _chunk(0, 1, 2, text="ITEM 1. Business\n\npage one body page two body"),
+    ]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "ITEM 1. Business"
+
+
+def test_attach_headings_low_quality_page_updates_carry_forward():
+    """A low text-quality page still updates carry-forward when readable.
+
+    Headings from excluded pages (tq < 0.900) are not stored, but a readable
+    page with valid headings still carries forward to later pages.
+    """
+    pages = [
+        _page(1, "ITEM 1. Business", headings=["ITEM 1. Business"]),
+        _page(2, "continued", headings=[]),
+        _page(3, "ITEM 2. Properties", headings=["ITEM 2. Properties"]),
+    ]
+    chunks = [
+        _chunk(0, 1, 1),
+        _chunk(1, 2, 2),
+        _chunk(2, 3, 3),
+    ]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "ITEM 1. Business"
+    assert result[1].section_heading == "ITEM 1. Business"
+    assert result[2].section_heading == "ITEM 2. Properties"
+
+
+def test_attach_headings_subheading_non_item():
+    """A non-ITEM heading that passes the subheading test is stored in subheading.
+
+    In a 10-K-structured document, non-ITEM headings no longer set
+    section_heading, but a real subheading (bold, short, not a table label)
+    is captured in the subheading field.
+    """
+    pages = [
+        _page(
+            1,
+            "ITEM 1. Business\n\nITEM 1A. Risk Factors\n\nRisk Factors\n\nbody text",
+            headings=["ITEM 1. Business", "ITEM 1A. Risk Factors", "Risk Factors"],
+        ),
+        _page(
+            2,
+            "ITEM 2. Properties\n\ntext",
+            headings=["ITEM 2. Properties"],
+        ),
+    ]
+    chunks = [
+        _chunk(0, 1, 1, text="Risk Factors\n\nbody text"),
+    ]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "ITEM 1A. Risk Factors"
+    assert result[0].subheading == "Risk Factors"
+
+
+def test_attach_headings_subheading_table_label_not_stored():
+    """Table labels and statement titles are never subheadings."""
+    pages = [
+        _page(
+            1,
+            "ITEM 1. Business\n\nITEM 1A. Risk Factors\n\n"
+            "Consolidated Balance Sheets Data:\n\nbody",
+            headings=[
+                "ITEM 1. Business",
+                "ITEM 1A. Risk Factors",
+                "Consolidated Balance Sheets Data:",
+            ],
+        ),
+    ]
+    chunks = [_chunk(0, 1, 1, text="Consolidated Balance Sheets Data:\n\nbody")]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "ITEM 1A. Risk Factors"
+    assert result[0].subheading is None
+
+
 def test_attach_headings_long_non_item_line_still_rejected():
     """A long line without an "Item NN." prefix is still capped at 60 chars."""
     long_cover = "X" * 100

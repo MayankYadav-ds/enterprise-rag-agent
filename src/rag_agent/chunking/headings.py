@@ -57,6 +57,113 @@ _MAX_HEADING_LENGTH = 60
 _MAX_ITEM_HEADING_LENGTH = 160
 # Item titles are exempt from the 60-character cap (see above).
 
+# A document is treated as 10-K-structured when at least this many distinct
+# "Item NN. Title" headings are detected. Below this, the previous behaviour
+# (any valid heading can set section_heading) is kept.
+_MIN_ITEM_HEADINGS = 3
+
+# Subheading candidates must pass this stricter test on top of
+# _is_valid_heading: they must be bold, larger than the body font, and not a
+# table header, statement title, or line label. Year-range and digits-only
+# text is also rejected.
+_HEADING_PATTERN_YEAR_RANGE = re.compile(
+    r"^\d{4}\s*(?:[-–]\s*\d{4})?\s*$"  # "2013", "2013-2014"
+    r"|^\d{4}\s+and\s+\d{4}$"  # "2013 and 2014"
+    r"|Years ended "  # "Years ended December 31,"
+    r"|As of "  # "As of December 31,"
+    r"|\(.*\)"  # parenthesised labels: "(a)", "(In thousands)"
+)
+_HEADING_PATTERN_DIGITS_ONLY = re.compile(r"^[\d,\s().]+$")
+
+# Normalise whitespace for heading/text comparison (clean_text collapses runs
+# of whitespace, so a stored heading may not be a literal substring of the page
+# text).
+_WHITESPACE_PATTERN = re.compile(r"\s+")
+
+
+def _is_subheading(heading: str) -> bool:
+    """Return True for a non-ITEM heading that is a real subheading.
+
+    A subheading is bold, larger than the body font, short, and not a table
+    header, statement title, line label, year range, or digits-only text.
+    """
+    stripped = heading.strip()
+    if not stripped or _is_item_heading(stripped):
+        return False
+    if len(stripped) > _MAX_HEADING_LENGTH:
+        return False
+    if _is_table_label(stripped):
+        return False
+    if _is_company_name(stripped):
+        return False
+    if _HEADING_PATTERN_YEAR_RANGE.search(stripped):
+        return False
+    if _HEADING_PATTERN_DIGITS_ONLY.match(stripped):
+        return False
+    # Reject statement-title-like labels ending in ":" (e.g. "Consolidated
+    # Balance Sheets Data:") and parenthesised labels.
+    if stripped.endswith(":"):
+        return False
+    return True
+
+
+def _find_chunk_offset(chunk_text: str, page_text: str, search_from: int) -> int:
+    """Return the offset of chunk_text in page_text, searching from search_from.
+
+    Chunks are searched forward from the previous chunk's end so that
+    overlapping or repeated text does not pick up an earlier occurrence.
+    Returns -1 when the chunk text cannot be found in the page text.
+    """
+    if not chunk_text or not page_text:
+        return -1
+    start = max(0, search_from)
+    idx = page_text.find(chunk_text, start)
+    if idx >= 0:
+        return idx
+    # Fall back to searching from the beginning of the page text.
+    return page_text.find(chunk_text)
+
+
+def _chunk_starts_with_heading(chunk_text: str, offsets: list[tuple[int, str]]) -> bool:
+    """Return True when the chunk text begins with a heading from offsets.
+
+    A chunk whose text starts at a heading (e.g. the whole page was chunked
+    starting from "PART II ITEM 5...") should treat headings inside the chunk
+    as preceding its body text. A chunk that starts mid-paragraph (e.g. after
+    the last heading on the page) should not.
+    """
+    if not chunk_text or not offsets:
+        return False
+    stripped = chunk_text.lstrip()
+    for _, heading in offsets:
+        if stripped.startswith(heading):
+            return True
+    return False
+
+
+def _find_heading_offset(heading: str, page_text: str) -> int:
+    """Return the offset of heading in page_text, or len(page_text) if absent.
+
+    A heading is not always a literal substring of the page text: ingestion's
+    clean_text may normalise whitespace or drop private-use characters, so the
+    stored heading can differ slightly from the page text. In that case the
+    heading is treated as the last thing on the page (it names the section
+    continuing onto the next page), which is the conservative choice.
+    """
+    if not heading:
+        return 0
+    idx = page_text.find(heading)
+    if idx >= 0:
+        return idx
+    # Try a normalised comparison: collapse whitespace and drop the
+    # private-use / format characters that clean_text removes.
+    normalised_heading = _WHITESPACE_PATTERN.sub(" ", heading).strip()
+    normalised_text = _WHITESPACE_PATTERN.sub(" ", page_text).strip()
+    idx = normalised_text.find(normalised_heading)
+    if idx >= 0:
+        return idx
+    return len(page_text)
+
 
 def _is_table_label(heading: str) -> bool:
     """Return True if the heading matches table label patterns that should be ignored."""
@@ -137,23 +244,152 @@ def attach_headings(chunks: list[Chunk], pages: list[PageContent]) -> list[Chunk
     # Sort page numbers for carry-forward logic
     sorted_pages = sorted(page_headings.keys())
 
+    # Determine whether the document has a 10-K structure: at least
+    # _MIN_ITEM_HEADINGS distinct ITEM headings. When it does, section_heading
+    # is the nearest preceding ITEM heading (carried forward across pages);
+    # table headers, statement titles and line labels no longer set it.
+    item_headings = {
+        page_num: [h for h in headings if _is_item_heading(h)]
+        for page_num, headings in page_headings.items()
+    }
+    has_item_structure = sum(len(h) for h in item_headings.values()) >= _MIN_ITEM_HEADINGS
+
+    # For each page, compute the character offset of every valid heading in the
+    # page text. This lets us assign headings by position within a page rather
+    # than by page number alone (issue #33).
+    page_text_by_number = {page.page_number: page.text for page in pages}
+    heading_offsets: dict[int, list[tuple[int, str]]] = {}
+    for page in pages:
+        offsets: list[tuple[int, str]] = []
+        text = page.text
+        for h in page_headings.get(page.page_number, []):
+            idx = _find_heading_offset(h, text)
+            offsets.append((idx, h))
+        heading_offsets[page.page_number] = sorted(offsets, key=lambda t: t[0])
+
+    # For each chunk, compute its character offset in the page text of its
+    # first page. Chunks are searched forward from the previous chunk's end so
+    # that overlapping or repeated text does not pick up an earlier occurrence.
+    # When the chunk text is not a literal substring of the page text (rare,
+    # e.g. after hyphen-join repair), the chunk boundary is approximated by the
+    # chunk's cumulative length from the last known offset.
+    chunk_offsets: dict[int, tuple[int, int, bool]] = {}
+    last_end = 0
+    for index, chunk in enumerate(chunks):
+        page_text = page_text_by_number.get(chunk.page_start, "")
+        offset = _find_chunk_offset(chunk.text, page_text, last_end)
+        if offset >= 0:
+            end = offset + len(chunk.text)
+            found = True
+        else:
+            # Fallback: approximate from the last known offset and chunk length.
+            offset = last_end
+            end = last_end + len(chunk.text)
+            found = False
+        chunk_offsets[index] = (offset, end, found)
+        last_end = end
+
     # For each chunk, find the nearest preceding heading on the same page
     # or an earlier page of the same document
     new_chunks: list[Chunk] = []
-    for chunk in chunks:
+    for index, chunk in enumerate(chunks):
         section_heading: str | None = None
+        subheading: str | None = None
 
-        # Find the latest page <= chunk.page_end that has headings
-        # We search backwards from the chunk's end page
-        for page_num in reversed(sorted_pages):
-            if page_num <= chunk.page_end:
-                # The last heading on that page is the one that names the section
-                # continuing onto subsequent pages
-                section_heading = page_headings[page_num][-1]
-                break
+        chunk_start, chunk_end, found_in_text = chunk_offsets[index]
+
+        # When the chunk's own text span contains an ITEM heading, that heading
+        # names the section the chunk belongs to. This catches chunks that begin
+        # mid-page after an ITEM heading (e.g. N-able p75 chunk starting at
+        # offset 2003 with ITEM 8 at offset 2876) and chunks that begin at the
+        # heading itself. It takes priority over carry-forward from earlier
+        # pages because the heading is literally inside the chunk's content.
+        if has_item_structure and chunk_start >= 0 and found_in_text:
+            offsets = heading_offsets.get(chunk.page_start, [])
+            contained_items = [
+                h for off, h in offsets if chunk_start <= off <= chunk_end and _is_item_heading(h)
+            ]
+            if contained_items:
+                section_heading = contained_items[0]
+
+        # Walk backwards through pages <= chunk.page_start to find the nearest
+        # preceding heading at or before the chunk's start offset.
+        if section_heading is None:
+            for page_num in reversed(sorted_pages):
+                if page_num > chunk.page_start:
+                    continue
+                offsets = heading_offsets.get(page_num, [])
+                if not offsets:
+                    continue
+                # On the chunk's own page, accept headings at or before the chunk
+                # start. On earlier pages, accept all headings (the last one names
+                # the section continuing onto the next page).
+                page_text_len = len(page_text_by_number.get(page_num, ""))
+                if page_num == chunk.page_start and chunk_start >= 0 and found_in_text:
+                    # On the chunk's own page: headings at or before the chunk's
+                    # start are definitely preceding. When the chunk text itself
+                    # starts with heading text (the chunk begins at a heading),
+                    # headings inside the chunk also precede the chunk's body text,
+                    # so the limit extends to the chunk's end.
+                    if _chunk_starts_with_heading(chunk.text, offsets):
+                        limit = chunk_end
+                    else:
+                        limit = chunk_start
+                else:
+                    # When the chunk text was not found in the page text or on an
+                    # earlier page, treat the whole page as preceding so the last
+                    # heading on the page still applies.
+                    limit = page_text_len
+                preceding = [h for off, h in offsets if off <= limit]
+                if preceding:
+                    if has_item_structure:
+                        item_preceding = [h for h in preceding if _is_item_heading(h)]
+                        if item_preceding:
+                            section_heading = item_preceding[-1]
+                            # Even when an ITEM heading is found, capture a
+                            # non-ITEM subheading that precedes it on the
+                            # same page (e.g. "Risk Factors" under ITEM 1A).
+                            if subheading is None:
+                                non_item_before = [
+                                    h
+                                    for off, h in offsets
+                                    if off <= limit
+                                    and not _is_item_heading(h)
+                                    and _is_subheading(h)
+                                ]
+                                if non_item_before:
+                                    subheading = non_item_before[-1]
+                            break
+                        # Non-ITEM headings (statement titles, etc.) do not
+                        # set section_heading but may still inform
+                        # subheading. Keep walking backwards to find an ITEM
+                        # heading from an earlier page; capture subheading
+                        # candidates along the way.
+                        non_item_preceding = [
+                            h for h in preceding if not _is_item_heading(h) and _is_subheading(h)
+                        ]
+                        if non_item_preceding and subheading is None:
+                            subheading = non_item_preceding[-1]
+                    else:
+                        section_heading = preceding[-1]
+                        break
+
+        # If no heading was found on the chunk's first page or earlier pages
+        # (e.g. the chunk starts at offset 0 and contains the heading itself),
+        # fall back to headings within the chunk's text span on the first page.
+        if section_heading is None and chunk_start >= 0:
+            offsets = heading_offsets.get(chunk.page_start, [])
+            item_preceding = [
+                h for off, h in offsets if chunk_start <= off <= chunk_end and _is_item_heading(h)
+            ]
+            if item_preceding:
+                section_heading = item_preceding[-1]
 
         # Create a new chunk with the heading attached (chunk_id unchanged)
-        if chunk.section_heading == section_heading:
+        if (
+            chunk.section_heading == section_heading
+            and getattr(chunk, "subheading", None) == subheading
+        ):
             new_chunks.append(chunk)
         else:
             new_chunks.append(
@@ -165,6 +401,7 @@ def attach_headings(chunks: list[Chunk], pages: list[PageContent]) -> list[Chunk
                     page_start=chunk.page_start,
                     page_end=chunk.page_end,
                     section_heading=section_heading,
+                    subheading=subheading,
                     token_count=chunk.token_count,
                     text_quality=chunk.text_quality,
                     chunk_index=chunk.chunk_index,
