@@ -396,6 +396,7 @@ class QdrantStore:
             "page_start": chunk.page_start,
             "page_end": chunk.page_end,
             "section_heading": chunk.section_heading,
+            "subheading": getattr(chunk, "subheading", None),
             "text_quality": chunk.text_quality,
             "token_count": chunk.token_count,
             "text": chunk.text,
