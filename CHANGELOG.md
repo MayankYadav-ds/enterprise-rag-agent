@@ -1,5 +1,17 @@
 # Changelog
 
+## [Fix heading hierarchy] — in progress on fix/heading-hierarchy
+
+- **fix(chunking):** position-based heading assignment — chunks now take the nearest preceding ITEM heading at or before their character offset in the page text, using per-page heading offset maps. Closes #34 and #36. Refs #4.
+- **fix(chunking):** an ITEM heading *inside* a chunk's text span (not just before it) now names the chunk's section. This fixes N-able p75 where chunks starting after ITEM 7A at offset 2003 correctly resolve to ITEM 8 at offset 2876 instead of falling through to carry-forward.
+- **fix(chunking):** carry-forward walk no longer `break`s on non-ITEM headings in 10-K-structured docs; only ITEM headings terminate the backwards walk.
+- **feat(chunking):** added `subheading` field to `Chunk` model and `attach_headings` output. Non-ITEM headings that pass a stricter test (bold, larger than body, not a table label/statement title/year-range/digits-only) are captured as `subheading` when the document has 10-K structure.
+- **feat(store):** `subheading` added to `_payload` so Qdrant point payloads carry it.
+- **fix(store):** `_patch_existing_payloads` now correctly refreshes the `subheading` field alongside `section_heading` for existing points.
+- **feat(scripts):** `heading_report.py` now reports `subheading` in its per-chunk output.
+
+## [Phase 4 — embeddings and Qdrant] — in progress on feat/embeddings-qdrant
+
 ## [Phase 4 — embeddings and Qdrant] — in progress on feat/embeddings-qdrant
 
 - **fix(store):** `source_file` is now stored as the bare file name (`Path(source_file).name`) instead of the indexed relative path, so a renamed source file is reflected without re-hydrating the chunk. Verified on the real run: renaming `sec-form-10-k-pdf-fixture.pdf` to `nps-pharmaceuticals-2013-10k.pdf` and re-indexing without `--recreate` patched all 300 of its chunks in place.

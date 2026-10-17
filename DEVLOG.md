@@ -35,6 +35,36 @@ After the fix (commits `d634574` and `61352ab`, applied at both layers), Item ti
 
 The smoke query "How does the company earn royalties?" now returns a p72 hit cited under `Consolidated Statements of Stockholders' Equity (Deficit)`, which is wrong — the label is a statement title, not the section the answer lives in. That is tracked as a known limitation.
 
+## Phase 4 — Fix heading hierarchy (fix/heading-hierarchy)
+
+### Problem
+
+Two chunks from real 10-K filings were misattributed:
+
+1. **N-able 2024 10-K, page 75**: Chunk starting at offset 2003 with text "in U.S. dollars for foreign subsidiaries..." was assigned `ITEM 7A. QUANTITATIVE AND QUALITATIVE DISCLOSURES ABOUT MARKET RISK` (from page 74) instead of `ITEM 8. FINANCIAL STATEMENTS AND SUPPLEMENTARY DATA`.
+2. **NPS 2013 10-K, page 44**: Chunk starting at offset 0 with text "PART II ITEM 5. Market for Registrant's Common Equity..." was assigned `ITEM 4. Mine Safety Disclosures` (from page 43) instead of `ITEM 5`.
+
+### Root cause
+
+Both cases share the same root cause: a chunk whose text span *contains* an ITEM heading on its own page was still being resolved via carry-forward from an earlier page. The original `attach_headings` logic only looked for headings *before* `chunk_start`; when the chunk started before a heading that was *inside* its span, the carry-forward from earlier pages won.
+
+### Fix
+
+1. **Contained-ITEM check** (runs first): if the chunk's text span on its first page contains an ITEM heading, that heading is the section. This is O(n) per chunk and takes priority over backwards walk.
+
+2. **Subheading capture on ITEM match**: when an ITEM heading is found during the backwards walk, any non-ITEM subheading preceding it on the same page is now also captured in the `subheading` field.
+
+3. **Carry-forward no longer breaks on non-ITEM headings**: in 10-K-structured docs, only ITEM headings terminate the backwards walk — non-ITEM headings (statement titles, table labels) are skipped so the walk continues to find the correct ITEM heading.
+
+4. **`subheading` field**: added to `Chunk` model and `_payload`. Non-ITEM headings passing a stricter test (bold, larger than body, not a table label) are stored as subheadings.
+
+### Verification
+
+- N-able p75: chunk 191 now correctly assigned `ITEM 8. FINANCIAL STATEMENTS AND SUPPLEMENTARY DATA`
+- NPS p44: chunk 128 correctly assigned `ITEM 5. Market for Registrant's Common Equity...`
+- All 161 existing tests pass plus 6 new tests
+- NPS false headings eliminated: `Product and Development Programs`, `Consolidated Statements of Stockholders' Equity (Deficit)`, `Proceeds from Available for Sale Securities`, `Product Indication Status Market` no longer appear as section_heading
+
 ## Phase 3 — Chunking Strategies
 
 I implemented three chunking strategies behind a common interface: fixed-size with overlap, recursive (paragraph-sentence-word fallback), and structure-aware (heading-based splitting). All strategies share common rules for table handling, quality filtering, and deterministic ID generation.
