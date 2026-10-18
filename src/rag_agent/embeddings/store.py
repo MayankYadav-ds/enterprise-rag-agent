@@ -395,13 +395,15 @@ class QdrantStore:
         ``source_file`` is stored as the bare file name (``Path(source_file).name``)
         so citations are stable across renames and re-indexes.
 
-        Optional fields that have no value are OMITTED rather than stored as
-        null. Qdrant's ``set_payload`` / ``batch_update_points`` drop
-        null-valued keys entirely, so a point that never had the key would not
-        equal a fresh payload carrying ``field: None`` under a plain dict
-        comparison, and the diff-based patch would re-apply it on every sync
-        forever. Omitting the key is the consistent form: "no value", "null"
-        and "missing" are the same thing.
+        Optional fields are always PRESENT in the payload, carrying ``None``
+        when they have no value. Qdrant's ``set_payload`` /
+        ``batch_update_points`` drop null-valued keys entirely (verified on
+        the live server), so writing ``field: None`` is what actually clears
+        a stale value that a previous run stored — omitting the key from the
+        patch would leave the old value in place forever. The companion
+        ``_payloads_equal`` normalises "stored missing" and "fresh None" as
+        equal, so a point that never had the key still converges after one
+        patch instead of being re-patched on every sync.
         """
         payload = {
             "chunk_id": chunk.chunk_id,
@@ -415,10 +417,8 @@ class QdrantStore:
             "token_count": chunk.token_count,
             "text": chunk.text,
             "embedding_model": model_name,
+            "subheading": getattr(chunk, "subheading", None),
         }
-        subheading = getattr(chunk, "subheading", None)
-        if subheading is not None:
-            payload["subheading"] = subheading
         return payload
 
     @staticmethod
@@ -430,7 +430,10 @@ class QdrantStore:
         point that never had a ``subheading`` key is not equal to a fresh
         payload carrying ``subheading: None`` under a plain ``dict``
         comparison. This normalises all three representations — None, a
-        missing key and an empty string — so the diff converges.
+        missing key and an empty string — so the diff converges. The
+        companion ``_payload`` writes ``field: None`` for absent optional
+        fields, which is what clears a stale value on the live server —
+        omitting the key from a patch does not remove it.
         """
         for key in set(stored) | set(fresh):
             stored_value = stored.get(key)

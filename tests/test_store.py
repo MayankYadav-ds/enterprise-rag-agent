@@ -6,6 +6,7 @@ import uuid
 
 import pytest
 from qdrant_client import QdrantClient
+from qdrant_client.http import models
 
 from rag_agent.chunking.models import Chunk
 from rag_agent.embeddings.fake import FakeEmbedder
@@ -77,41 +78,112 @@ class ShortVectorEmbedder(FakeEmbedder):
 
 
 class _NullDroppingClient:
-    """Wrap a Qdrant client and drop null-valued payload keys on writes.
+    """Wrap a Qdrant client so its payload reads match the live server.
 
-    This reproduces the behaviour of the live Qdrant server, which drops
-    null-valued keys from ``set_payload`` / ``batch_update_points`` while
-    keeping them on ``upsert``. The in-memory client stores them, so without
-    this wrapper the convergence bug is invisible to tests.
+    Two server behaviours are modelled, both verified on the live Qdrant at
+    ``http://localhost:6333``:
+
+    1. A key written as ``null`` on ``set_payload`` / ``batch_update_points``
+       is dropped — the point no longer carries it. (``upsert`` keeps null
+       keys, so an initial upsert can store one.)
+    2. A key OMITTED from a patch payload is NOT removed — the old value
+       stays. Only an explicit ``null`` clears a key.
+
+    The in-memory client stores nulls and merges partial payloads, so it
+    satisfies (2) by default but hides (1). This wrapper keeps a shadow
+    per-point payload and applies writes against it, so a point that never
+    had a ``subheading`` key is never equal to a fresh payload carrying
+    ``subheading: None`` under a plain ``dict`` comparison — the
+    convergence bug is visible in CI.
     """
 
     def __init__(self, client: QdrantClient) -> None:
         self._client = client
+        self._payloads: dict[uuid.UUID, dict] = {}
 
     def __getattr__(self, name: str):
         return getattr(self._client, name)
 
     @staticmethod
-    def _strip_nulls(payload: dict | None) -> dict | None:
+    def _as_uuid(value) -> uuid.UUID:
+        return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+
+    def _apply(self, point_id: uuid.UUID, payload: dict | None) -> None:
         if payload is None:
-            return None
-        return {k: v for k, v in payload.items() if v is not None}
+            return
+        store = self._payloads.setdefault(point_id, {})
+        for key, value in payload.items():
+            if value is None:
+                store.pop(key, None)  # explicit null removes the key
+            else:
+                store[key] = value
 
-    def set_payload(self, *args, **kwargs):
-        if "payload" in kwargs:
-            kwargs["payload"] = self._strip_nulls(kwargs["payload"])
-        elif args:
-            args = (self._strip_nulls(args[0]),) + args[1:]
-        return self._client.set_payload(*args, **kwargs)
+    def upsert(self, collection_name, points=None, **kwargs):
+        result = self._client.upsert(collection_name, points=points, **kwargs)
+        for point in points or []:
+            self._payloads[self._as_uuid(point.id)] = dict(point.payload or {})
+        return result
 
-    def batch_update_points(self, *args, **kwargs):
-        operations = kwargs.get("update_operations")
-        if operations is None and args:
-            operations = args[1]
-        for op in operations:
-            if hasattr(op, "set_payload") and op.set_payload is not None:
-                op.set_payload.payload = self._strip_nulls(op.set_payload.payload)
-        return self._client.batch_update_points(*args, **kwargs)
+    def set_payload(self, collection_name, payload, points=None, **kwargs):
+        result = self._client.set_payload(collection_name, payload=payload, points=points, **kwargs)
+        for point_id_ in points or []:
+            self._apply(self._as_uuid(point_id_), payload)
+        return result
+
+    def batch_update_points(self, collection_name, update_operations=None, **kwargs):
+        for operation in update_operations or []:
+            set_payload = getattr(operation, "set_payload", None)
+            if set_payload is None:
+                continue
+            for point_id_ in set_payload.points or []:
+                self._apply(self._as_uuid(point_id_), set_payload.payload)
+        return self._client.batch_update_points(
+            collection_name, update_operations=update_operations, **kwargs
+        )
+
+    def scroll(self, collection_name, **kwargs):
+        records, next_offset = self._client.scroll(collection_name, **kwargs)
+        for record in records:
+            shadow = self._payloads.get(self._as_uuid(record.id))
+            if shadow is not None:
+                record.payload = shadow
+        return records, next_offset
+
+    def retrieve(self, collection_name, ids, **kwargs):
+        records = self._client.retrieve(collection_name, ids=ids, **kwargs)
+        for record in records:
+            shadow = self._payloads.get(self._as_uuid(record.id))
+            if shadow is not None:
+                record.payload = shadow
+        return records
+
+    def delete(self, collection_name, points_selector=None, **kwargs):
+        for point_id_ in points_selector or []:
+            self._payloads.pop(self._as_uuid(point_id_), None)
+        return self._client.delete(collection_name, points_selector=points_selector, **kwargs)
+
+    def seed_payload(
+        self,
+        point_id: uuid.UUID,
+        payload: dict,
+        collection_name: str = "rag_chunks",
+    ) -> None:
+        """Insert a stored payload as if indexed by an older code version.
+
+        The 543 points indexed before the ``subheading`` field existed had
+        no such key; this lets a test reproduce that state without an
+        upsert, which would keep a null key instead. The point is created
+        in the underlying client too (with a zero vector) so it is
+        discoverable by ``scroll`` / ``scroll_ids``; the shadow payload is
+        what reads return. ``doc_id`` must be present in the payload or
+        the doc-scoped scroll filter finds nothing.
+        """
+        pid = self._as_uuid(point_id)
+        self._payloads[pid] = dict(payload)
+        self._client.upsert(
+            collection_name,
+            points=[models.PointStruct(id=pid, vector=[0.0] * 16, payload=dict(payload))],
+        )
 
 
 @pytest.fixture
@@ -501,6 +573,73 @@ class TestPayloadConvergence:
         assert QdrantStore._payloads_equal({"a": "x"}, {"a": "y"}) is False
         # Plain dict equality is preserved when nothing is null/missing.
         assert QdrantStore._payloads_equal({"a": "x", "b": "y"}, {"a": "x", "b": "y"}) is True
+
+    def test_stale_subheading_is_cleared_by_patch(self, live_store):
+        """A stale subheading value left by an older code version is cleared.
+
+        The 41 N-able points carrying ``subheading: "PART I"`` and the 47
+        carrying the auditor's report title were written before the 10-K
+        marker whitelist, when section markers leaked into the subheading
+        field. The fresh payload carries ``subheading: None`` for those
+        chunks, so the patch must write ``None`` — and on the live server
+        that is what clears the key. Omitting the key from the patch would
+        leave the stale value in place and the diff would never converge.
+        """
+        from rag_agent.embeddings.store import point_id
+
+        c = make_chunk()
+        pid = point_id(c.chunk_id)
+        live_store.client.seed_payload(
+            pid,
+            {"doc_id": c.doc_id, "subheading": "PART I"},
+            collection_name=live_store.collection_name,
+        )
+
+        # The fresh payload carries subheading=None for this chunk, so the
+        # stored "PART I" looks changed and is patched.
+        result = live_store.sync(c.doc_id, [c], live_store.embedder, source_file="a.pdf")
+        assert result["payload_updated"] == 1
+        # After the patch the key is gone: the wrapper models the server
+        # dropping a null-valued key, so the shadow store no longer has it.
+        assert "subheading" not in live_store.client._payloads[pid]
+        assert live_store.client._payloads[pid].get("subheading") is None
+        # A second run converges.
+        second = live_store.sync(c.doc_id, [c], live_store.embedder, source_file="a.pdf")
+        assert second["upserted"] == 0
+        assert second["payload_updated"] == 0
+
+    def test_omitted_key_does_not_clear_stale_value(self, live_store):
+        """Pinning the contract: omitting a key from a patch leaves it alone.
+
+        Verified on the live server — only an explicit ``null`` removes a
+        key. This is why ``_payload`` writes ``field: None`` for absent
+        optional fields rather than omitting them.
+        """
+        from rag_agent.embeddings.store import point_id
+
+        c = make_chunk()
+        pid = point_id(c.chunk_id)
+        live_store.client.seed_payload(
+            pid,
+            {"doc_id": c.doc_id, "subheading": "PART I"},
+            collection_name=live_store.collection_name,
+        )
+
+        # Manually patch WITHOUT the subheading key (the omission approach).
+        payload_without_subheading = QdrantStore._payload(
+            c, live_store.embedder.model_name, "a.pdf"
+        )
+        payload_without_subheading.pop("subheading")
+        live_store.client.batch_update_points(
+            live_store.collection_name,
+            update_operations=[
+                models.SetPayloadOperation(
+                    set_payload=models.SetPayload(payload=payload_without_subheading, points=[pid])
+                )
+            ],
+        )
+        # The stale value survives because the patch never mentioned the key.
+        assert live_store.client._payloads[pid].get("subheading") == "PART I"
 
 
 class TestSourceFileName:

@@ -307,6 +307,52 @@ appears *before* an ITEM heading on the same page (e.g. `PART I`, the auditor's
 report title) is no longer captured as that ITEM's subheading — it names the
 enclosing part or the report, not a subheading of the ITEM.
 
+### Second re-index: the convergence still did not hold
+
+A re-index after the fix above reported `0 payload updated` for NPS but
+**89 payload updated for N-able on every run**. A field-level probe of the
+243 N-able points found the divergence in one key:
+
+```
+subheading: stored='PART I' fresh=None      (41 points)
+subheading: stored='Report of Independent Registered Public Accounting Firm' fresh=None  (47 points)
+```
+
+These values were written by a pre-whitelist run, when section markers
+(`PART I`, the auditor's report title) leaked into the `subheading` field.
+The fix above had made `_payload` OMIT optional fields, so the patch payload
+never mentioned `subheading` at all — and **on the live server, omitting a
+key from a `set_payload` / `batch_update_points` patch does not remove it;
+only an explicit `null` does** (verified by inserting a probe point and
+patching it both ways). The stale values therefore survived forever and the
+diff never converged.
+
+`_payload` now always includes optional fields, carrying `None` when absent,
+so the patch writes `null` and clears the stale value. The `_payloads_equal`
+normaliser is unchanged — it still treats "stored missing" and "fresh None"
+as equal, so a point that never had the key converges after one patch. The
+`_NullDroppingClient` test fixture was rewritten to model both server
+behaviours (null dropped on write; omission does not clear) with a shadow
+per-point payload, and two new tests pin the stale-value-clearing and
+omission-doesn't-clear contracts.
+
+A second re-index after this fix shows `0 payload updated` for both
+documents, and a third confirms it holds.
+
+**More subheading junk.** While probing, two further garbage values were
+found on the real filings — both from the N-able report's broken-font-mapping
+pages, both printable and digit-bearing so they passed every check added
+above:
+
+- `:=` (detected on page 2, tq=1.000, so the quality threshold does not
+  exclude it) — carried forward to chunks on pages 3-6.
+- `$6%24)3).'"` (28 chunks) and `$0A09@0` (8 chunks) on the auditor's
+  report pages.
+
+`_is_subheading` now also requires a run of at least two consecutive
+letters. All nine real NPS subheadings survive; the three junk values do
+not. N-able now has 0 chunks with a subheading, NPS keeps its 200.
+
 ## Status
 
 Phase 4 (embeddings + Qdrant) is complete and merged. Retrieval, answer
