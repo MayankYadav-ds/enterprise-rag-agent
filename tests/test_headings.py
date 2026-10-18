@@ -668,3 +668,31 @@ def test_attach_headings_non_10k_document_unchanged():
     result = attach_headings(chunks, pages)
     # Non-10-K: the marker is just another valid heading.
     assert result[0].section_heading == "Report of Independent Registered Public Accounting Firm"
+
+
+def test_attach_headings_non_10k_heading_inside_chunk_span_takes_priority():
+    """A non-10-K document: a heading inside a chunk's span beats carry-forward.
+
+    The contained-heading rule is not gated on 10-K structure, so a plain
+    document (below _MIN_ITEM_HEADINGS) also prefers the heading that the
+    chunk literally contains over the last heading from the previous page.
+    """
+    pages = [
+        _page(
+            1,
+            "First Heading\n\nbody",
+            headings=["First Heading"],
+        ),
+        _page(
+            2,
+            "Second Heading\n\nbody",
+            headings=["Second Heading"],
+        ),
+    ]
+    chunks = [
+        _chunk(0, 1, 1, text="First Heading\n\nbody"),
+        _chunk(1, 2, 2, text="Second Heading\n\nbody"),
+    ]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "First Heading"
+    assert result[1].section_heading == "Second Heading"
