@@ -10,7 +10,7 @@
     index, so the real model can load.
 
     Steps: docker compose up -d, wait for Qdrant, then in the container:
-    bash .agent/run_in_container.sh <strategy> <qdrant-url> [skip-second-run]
+    bash scripts/run_in_container.sh <strategy> <qdrant-url> [skip-second-run]
 
     Everything is logged to .agent/index-run.log.
 
@@ -57,15 +57,18 @@ Remove-Item -Path $logPath -ErrorAction SilentlyContinue
 Write-Log "===== index_in_docker.ps1 start (strategy=$Strategy, skipSecondRun=$SkipSecondRun) ====="
 
 # 4. Start Qdrant.
-# ``docker compose up -d`` prints status to stderr even on success.
-# Use Continue to capture output, then check $LASTEXITCODE.
+# ``docker compose up -d`` prints status to stderr even on success. Stream
+# every line to the log as it is produced (the old Out-String captured the
+# whole run and wrote it only after the container exited, so the user saw
+# silence for the duration). Success is decided from $LASTEXITCODE, not from
+# the presence of error records. The container script lives in scripts/
+# (not .agent/, which is gitignored).
 Write-Log "docker compose up -d"
 $prev = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-$composeOutput = docker compose up -d 2>&1 | Out-String
+docker compose up -d 2>&1 | ForEach-Object { Write-Log "compose: $_" }
 $composeExit = $LASTEXITCODE
 $ErrorActionPreference = $prev
-if ($composeOutput) { $composeOutput.Trim() | ForEach-Object { Write-Log "compose: $_" } }
 if ($composeExit -ne 0) {
     Write-Log "ERROR: docker compose up -d failed with exit code $composeExit"
     exit 1
@@ -92,22 +95,21 @@ Write-Log "Qdrant ready on http://localhost:6333/collections"
 # 6. Run the container script.
 $network = "enterprise-rag-agent_default"
 $mountRepo = "${projectRoot}:/rag_agent"
-$containerScript = "/rag_agent/.agent/run_in_container.sh"
+$containerScript = "/rag_agent/scripts/run_in_container.sh"
 $skipFlag = if ($SkipSecondRun) { "true" } else { "false" }
 
 Write-Log "===== CONTAINER INDEXING (strategy=$Strategy, skipSecondRun=$skipFlag) ====="
 $prev = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-$dockerOutput = docker run --rm `
+docker run --rm `
     --network $network `
     -v $mountRepo `
     -v hf_cache:/root/.cache/huggingface `
     -v pip_cache:/root/.cache/pip `
     --workdir /rag_agent `
-    python:3.11-slim bash "$containerScript" "$Strategy" "http://qdrant:6333" "$skipFlag" 2>&1 | Out-String
+    python:3.11-slim bash "$containerScript" "$Strategy" "http://qdrant:6333" "$skipFlag" 2>&1 | ForEach-Object { Write-Log "docker: $_" }
 $dockerExit = $LASTEXITCODE
 $ErrorActionPreference = $prev
-if ($dockerOutput) { $dockerOutput.Trim() | ForEach-Object { Write-Log "docker: $_" } }
 if ($dockerExit -ne 0) {
     Write-Log "ERROR: docker run failed with exit code $dockerExit"
     exit 1
