@@ -11,11 +11,6 @@ flowchart LR
     I --> C[Chunking + metadata]
     C --> E[Embeddings]
     E --> Q[(Qdrant)]
-    U[Question] --> R[BM25 + dense retrieval]
-    Q --> R
-    R --> X[Cross-encoder reranker]
-    X --> G[Grounded LLM]
-    G --> A[Streaming answer + citations]
 ```
 
 ## Ingestion
@@ -110,11 +105,13 @@ flowchart LR
 - The model silently truncates text beyond 512 WordPiece tokens, so chunk size
   was lowered from 512/50 to 400/39. See [`docs/TOKEN_LIMIT_REPORT.md`](TOKEN_LIMIT_REPORT.md).
 
-## Retrieval, generation, evaluation
+## Retrieval, generation, evaluation, API
 
-`src/rag_agent/retrieval/` combines BM25 and dense-vector retrieval with
-reciprocal-rank fusion and a cross-encoder reranker. `src/rag_agent/generation/`
-streams grounded answers over Server-Sent Events with document and page
-citations. `src/rag_agent/evaluation/` runs RAGAS and retrieval metrics against
-a reproducible gold set. These phases are built incrementally and documented in
-[docs/DECISIONS.md](docs/DECISIONS.md).
+`src/rag_agent/retrieval/`, `src/rag_agent/generation/`,
+`src/rag_agent/evaluation/` and `src/rag_agent/api/` are stubs for later
+phases. Their `__init__.py` files carry a docstring and nothing else.
+Retrieval will combine BM25 and dense-vector retrieval with reciprocal-rank
+fusion and a cross-encoder reranker; generation will stream grounded answers
+over Server-Sent Events with document and page citations; evaluation will run
+RAGAS and retrieval metrics against a reproducible gold set. These phases are
+built incrementally and documented in [docs/DECISIONS.md](docs/DECISIONS.md).

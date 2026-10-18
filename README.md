@@ -16,9 +16,7 @@ Long reports and technical manuals are difficult to search reliably. This projec
 
 - Parse PDFs while preserving page, heading, table, and source metadata.
 - Compare fixed-size, recursive, and structure-aware chunking strategies.
-- Combine BM25 and dense-vector retrieval with reciprocal-rank fusion and reranking.
-- Stream grounded answers over Server-Sent Events, with document and page citations.
-- Evaluate retrieval and answer quality using a reproducible gold set and RAGAS.
+- Index chunks into Qdrant with diff-based sync and payload patching.
 
 ## Architecture
 
@@ -28,11 +26,6 @@ flowchart LR
     I --> C[Chunking + metadata]
     C --> E[Embeddings]
     E --> Q[(Qdrant)]
-    U[Question] --> R[BM25 + dense retrieval]
-    Q --> R
-    R --> X[Cross-encoder reranker]
-    X --> G[Grounded LLM]
-    G --> A[Streaming answer + citations]
 ```
 
 ## Tech stack
@@ -40,10 +33,8 @@ flowchart LR
 | Concern | Choice | Why |
 | --- | --- | --- |
 | Runtime | Python 3.11 | Broad ML and backend support |
-| RAG orchestration | LangChain | Modular retriever and streaming integrations |
 | Vector database | Qdrant | Self-hostable filtering and vector search |
-| Embeddings / reranking | sentence-transformers | Local-capable, well-tested models |
-| API | FastAPI + SSE | Typed API with native async streaming |
+| Embeddings | sentence-transformers | Local-capable, well-tested models |
 | Quality | pytest, Ruff, pre-commit, GitHub Actions | Fast repeatable checks |
 
 ## Quick start
@@ -151,7 +142,7 @@ No evaluation has been run yet; this repository will not publish placeholder sco
 
 ## Design decisions and trade-offs
 
-The project uses LangChain for composable retrieval and provider-agnostic streaming, Qdrant for local vector storage, and a hybrid retrieval strategy to balance exact terminology with semantic matches. More detailed decisions—including alternatives considered—are in [docs/DECISIONS.md](docs/DECISIONS.md).
+The project uses Qdrant for local vector storage and sentence-transformers for embeddings. Retrieval, answer generation, evaluation, and the API are built incrementally in later phases — see [docs/DECISIONS.md](docs/DECISIONS.md) for decisions and trade-offs.
 
 ## Project structure
 
@@ -160,10 +151,10 @@ src/rag_agent/        Application package
   ingestion/          PDF parsing and normalisation
   chunking/           Chunking strategies
   embeddings/         Embedding and vector indexing
-  retrieval/          BM25, dense, fusion, reranking
-  generation/         Grounded prompts and citations
-  api/                FastAPI endpoints
-  evaluation/         RAGAS and retrieval metrics
+  retrieval/          (stub — Phase 5)
+  generation/         (stub — Phase 6)
+  api/                (stub — Phase 7)
+  evaluation/         (stub — Phase 8)
 tests/                 Unit and integration tests
 data/                  Legally usable source documents and provenance
 docs/                  Architecture, decisions, and evaluation records
