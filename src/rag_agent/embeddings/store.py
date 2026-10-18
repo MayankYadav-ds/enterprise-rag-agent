@@ -53,7 +53,14 @@ _CLIENTS: dict[str, QdrantClient] = {}
 
 
 def _client_for(location: str) -> QdrantClient:
-    return _CLIENTS.setdefault(location, QdrantClient(location=location))
+    # Lazy construction: ``setdefault`` evaluates its default argument
+    # eagerly, which would build a client for an invalid location string
+    # (e.g. a test key) before checking whether one was already registered.
+    client = _CLIENTS.get(location)
+    if client is None:
+        client = QdrantClient(location=location)
+        _CLIENTS[location] = client
+    return client
 
 
 class QdrantStore:
@@ -283,7 +290,7 @@ class QdrantStore:
             (point_id_, payload)
             for point_id_, payload in target.items()
             if existing_payloads.get(point_id_) is not None
-            and existing_payloads[point_id_] != payload
+            and not self._payloads_equal(existing_payloads[point_id_], payload)
         ]
         if not to_patch:
             return 0
@@ -387,8 +394,16 @@ class QdrantStore:
 
         ``source_file`` is stored as the bare file name (``Path(source_file).name``)
         so citations are stable across renames and re-indexes.
+
+        Optional fields that have no value are OMITTED rather than stored as
+        null. Qdrant's ``set_payload`` / ``batch_update_points`` drop
+        null-valued keys entirely, so a point that never had the key would not
+        equal a fresh payload carrying ``field: None`` under a plain dict
+        comparison, and the diff-based patch would re-apply it on every sync
+        forever. Omitting the key is the consistent form: "no value", "null"
+        and "missing" are the same thing.
         """
-        return {
+        payload = {
             "chunk_id": chunk.chunk_id,
             "doc_id": chunk.doc_id,
             "source_file": _source_file_name(source_file),
@@ -396,9 +411,36 @@ class QdrantStore:
             "page_start": chunk.page_start,
             "page_end": chunk.page_end,
             "section_heading": chunk.section_heading,
-            "subheading": getattr(chunk, "subheading", None),
             "text_quality": chunk.text_quality,
             "token_count": chunk.token_count,
             "text": chunk.text,
             "embedding_model": model_name,
         }
+        subheading = getattr(chunk, "subheading", None)
+        if subheading is not None:
+            payload["subheading"] = subheading
+        return payload
+
+    @staticmethod
+    def _payloads_equal(stored: dict, fresh: dict) -> bool:
+        """Compare two payloads, treating None, missing keys and "" as equal.
+
+        Qdrant drops null-valued keys on ``set_payload`` /
+        ``batch_update_points`` (verified on the live server), so a stored
+        point that never had a ``subheading`` key is not equal to a fresh
+        payload carrying ``subheading: None`` under a plain ``dict``
+        comparison. This normalises all three representations — None, a
+        missing key and an empty string — so the diff converges.
+        """
+        for key in set(stored) | set(fresh):
+            stored_value = stored.get(key)
+            fresh_value = fresh.get(key)
+            if stored_value == fresh_value:
+                continue
+            # Normalise "no value" representations. ``in`` is used rather than
+            # ``or`` so that a real empty string on one side is not mistaken
+            # for a non-empty value on the other when both are absent.
+            if stored_value in (None, "") and fresh_value in (None, ""):
+                continue
+            return False
+        return True

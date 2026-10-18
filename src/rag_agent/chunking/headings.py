@@ -86,6 +86,13 @@ def _is_subheading(heading: str) -> bool:
 
     A subheading is bold, larger than the body font, short, and not a table
     header, statement title, line label, year range, or digits-only text.
+
+    NOTE: this function checks text patterns only. It does not look at bold
+    or font-size signals — those were available at ingestion time but are not
+    carried through to the chunker, so a subheading candidate that passes is
+    not guaranteed to be bold or larger than the body font. The stricter
+    ingestion detector already rejected most table labels and statement
+    titles; this check is the second, text-pattern-only filter.
     """
     stripped = heading.strip()
     if not stripped or _is_item_heading(stripped):
@@ -103,6 +110,17 @@ def _is_subheading(heading: str) -> bool:
     # Reject statement-title-like labels ending in ":" (e.g. "Consolidated
     # Balance Sheets Data:") and parenthesised labels.
     if stripped.endswith(":"):
+        return False
+    # Reject headings that still carry non-printable characters. Ingestion's
+    # clean_text drops private-use area glyphs (Co) and format characters
+    # (Cf), but it does not drop control characters (Cc), so a heading block
+    # whose text was not fully cleaned — e.g. the N-able report's
+    # broken-font-mapping pages — can reach here with raw control characters
+    # such as "\x06,-70\x05\x01\x1b9.\x07". Such text is not a subheading in
+    # any language. All of the garbage values observed on the real filings
+    # live on low-text-quality pages that are excluded from chunking anyway,
+    # but the check keeps the subheading field honest.
+    if not stripped.isprintable():
         return False
     return True
 
@@ -347,18 +365,29 @@ def attach_headings(chunks: list[Chunk], pages: list[PageContent]) -> list[Chunk
                         if item_preceding:
                             section_heading = item_preceding[-1]
                             # Even when an ITEM heading is found, capture a
-                            # non-ITEM subheading that precedes it on the
+                            # non-ITEM subheading that comes AFTER it on the
                             # same page (e.g. "Risk Factors" under ITEM 1A).
+                            # A non-ITEM heading that appears BEFORE the ITEM
+                            # heading (e.g. "PART I" on N-able p7, "Report of
+                            # Independent Registered Public Accounting Firm"
+                            # on N-able p83) names the enclosing part or the
+                            # auditor's report, not a subheading of the ITEM,
+                            # so it is not captured here.
                             if subheading is None:
-                                non_item_before = [
+                                last_item_offset = max(
+                                    off
+                                    for off, h in offsets
+                                    if off <= limit and _is_item_heading(h)
+                                )
+                                non_item_after = [
                                     h
                                     for off, h in offsets
-                                    if off <= limit
+                                    if last_item_offset < off <= limit
                                     and not _is_item_heading(h)
                                     and _is_subheading(h)
                                 ]
-                                if non_item_before:
-                                    subheading = non_item_before[-1]
+                                if non_item_after:
+                                    subheading = non_item_after[-1]
                             break
                         # Non-ITEM headings (statement titles, etc.) do not
                         # set section_heading but may still inform

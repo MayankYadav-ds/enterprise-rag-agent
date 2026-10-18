@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from qdrant_client import QdrantClient
 
 from rag_agent.chunking.models import Chunk
 from rag_agent.embeddings.fake import FakeEmbedder
@@ -75,12 +76,73 @@ class ShortVectorEmbedder(FakeEmbedder):
         return super().embed_documents(texts[:-1])
 
 
+class _NullDroppingClient:
+    """Wrap a Qdrant client and drop null-valued payload keys on writes.
+
+    This reproduces the behaviour of the live Qdrant server, which drops
+    null-valued keys from ``set_payload`` / ``batch_update_points`` while
+    keeping them on ``upsert``. The in-memory client stores them, so without
+    this wrapper the convergence bug is invisible to tests.
+    """
+
+    def __init__(self, client: QdrantClient) -> None:
+        self._client = client
+
+    def __getattr__(self, name: str):
+        return getattr(self._client, name)
+
+    @staticmethod
+    def _strip_nulls(payload: dict | None) -> dict | None:
+        if payload is None:
+            return None
+        return {k: v for k, v in payload.items() if v is not None}
+
+    def set_payload(self, *args, **kwargs):
+        if "payload" in kwargs:
+            kwargs["payload"] = self._strip_nulls(kwargs["payload"])
+        elif args:
+            args = (self._strip_nulls(args[0]),) + args[1:]
+        return self._client.set_payload(*args, **kwargs)
+
+    def batch_update_points(self, *args, **kwargs):
+        operations = kwargs.get("update_operations")
+        if operations is None and args:
+            operations = args[1]
+        for op in operations:
+            if hasattr(op, "set_payload") and op.set_payload is not None:
+                op.set_payload.payload = self._strip_nulls(op.set_payload.payload)
+        return self._client.batch_update_points(*args, **kwargs)
+
+
 @pytest.fixture
 def store() -> QdrantStore:
     return QdrantStore(
         embedder=FakeEmbedder(dimension=16),
         collection_name=f"test_chunks_{uuid.uuid4().hex}",
         url=":memory:",
+    )
+
+
+@pytest.fixture
+def live_store() -> QdrantStore:
+    """A store whose Qdrant client drops null payload keys like the server.
+
+    The in-memory client keeps null keys, which hides the convergence bug:
+    on the live server ``set_payload`` / ``batch_update_points`` drop them,
+    so a point that never had a ``subheading`` key is never equal to a fresh
+    payload carrying ``subheading: None``.
+    """
+    location = f":memory:live_{uuid.uuid4().hex}"
+    from rag_agent.embeddings.store import _CLIENTS
+
+    # The underlying client must use ":memory:" (a custom location string is
+    # rejected as a host/port); the wrapper is registered under the custom
+    # location key so _client_for returns it instead of creating a new one.
+    _CLIENTS[location] = _NullDroppingClient(QdrantClient(location=":memory:"))
+    return QdrantStore(
+        embedder=FakeEmbedder(dimension=16),
+        collection_name=f"test_live_{uuid.uuid4().hex}",
+        url=location,
     )
 
 
@@ -375,6 +437,70 @@ class TestQdrantStore:
         assert result["payload_updated"] == 2
         hits = store.search(store.embedder.embed_query("x"), top_k=10)
         assert {h.payload["source_file"] for h in hits} == {"b.pdf"}
+
+
+class TestPayloadConvergence:
+    """The patch pass must converge when stored and fresh payloads differ
+    only in the representation of "no value".
+
+    The live Qdrant server drops null-valued keys on ``set_payload`` /
+    ``batch_update_points`` while ``upsert`` keeps them, so a point that never
+    had a ``subheading`` key is not equal to a fresh payload carrying
+    ``subheading: None`` under a plain ``dict`` comparison. The patch pass
+    normalises None, missing keys and "" so re-running converges.
+    """
+
+    def test_missing_subheading_converges_after_one_patch(self, live_store):
+        """A point lacking ``subheading`` is patched once, then converges.
+
+        This is the real-world case: the 543 points indexed before the
+        ``subheading`` field existed had no such key, and every re-sync
+        re-patched them because the fresh payload carried ``subheading: None``.
+        """
+        c = make_chunk()
+        # First sync writes the payload with no subheading key.
+        first = live_store.sync(c.doc_id, [c], live_store.embedder, source_file="a.pdf")
+        assert first["payload_updated"] == 0
+
+        # Second sync must converge: 0 embeddings, 0 patches.
+        second = live_store.sync(c.doc_id, [c], live_store.embedder, source_file="a.pdf")
+        assert second["upserted"] == 0
+        assert second["skipped"] == 1
+        assert second["payload_updated"] == 0
+
+    def test_changed_subheading_is_patched(self, live_store):
+        """A chunk whose subheading actually changes is patched in place."""
+        c1 = make_chunk(chunk_index=0, section_heading="ITEM 1. Business")
+        live_store.sync(c1.doc_id, [c1], live_store.embedder, source_file="a.pdf")
+
+        # Same chunk_id (same text, same position), new subheading -> patch.
+        c2 = make_chunk(
+            chunk_index=0,
+            section_heading="ITEM 1A. Risk Factors",
+            subheading="Risk Factors",
+        )
+        result = live_store.sync(c1.doc_id, [c2], live_store.embedder, source_file="a.pdf")
+        assert result["upserted"] == 0
+        assert result["payload_updated"] == 1
+
+        # A third run converges.
+        third = live_store.sync(c1.doc_id, [c2], live_store.embedder, source_file="a.pdf")
+        assert third["payload_updated"] == 0
+
+    def test_empty_string_and_missing_key_are_equal(self, live_store):
+        """``""`` on one side and a missing key on the other compare equal."""
+        from rag_agent.embeddings.store import QdrantStore
+
+        assert QdrantStore._payloads_equal({"a": ""}, {"a": None}) is True
+        assert QdrantStore._payloads_equal({"a": None}, {}) is True
+        assert QdrantStore._payloads_equal({}, {"a": None}) is True
+        assert QdrantStore._payloads_equal({"a": ""}, {}) is True
+        # A real value still differs from a missing one.
+        assert QdrantStore._payloads_equal({"a": "x"}, {}) is False
+        assert QdrantStore._payloads_equal({"a": "x"}, {"a": None}) is False
+        assert QdrantStore._payloads_equal({"a": "x"}, {"a": "y"}) is False
+        # Plain dict equality is preserved when nothing is null/missing.
+        assert QdrantStore._payloads_equal({"a": "x", "b": "y"}, {"a": "x", "b": "y"}) is True
 
 
 class TestSourceFileName:
