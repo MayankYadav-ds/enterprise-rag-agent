@@ -617,11 +617,14 @@ def test_attach_headings_part_marker_sets_section_heading():
 
 
 def test_attach_headings_marker_inside_chunk_span_takes_priority():
-    """A section marker inside a chunk's span beats carry-forward.
+    """A section heading inside a chunk's span beats carry-forward.
 
     The chunk on N-able p77 starts at offset 1773 (after ITEM 13) and its
-    span contains ITEM 14, so it takes ITEM 14 rather than the PART III
-    heading at offset 0.
+    span contains ITEM 14, so it takes the last section heading in its span
+    (ITEM 14) rather than the PART III heading that carries forward. Also
+    covers a non-10-K document (below _MIN_ITEM_HEADINGS): a heading inside
+    the chunk's span still wins over carry-forward, which was previously
+    broken when _contained_section_heading was gated on has_item_structure.
     """
     pages = [
         _page(
