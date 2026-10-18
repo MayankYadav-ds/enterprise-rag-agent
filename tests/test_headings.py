@@ -399,6 +399,91 @@ def test_attach_headings_subheading_table_label_not_stored():
     assert result[0].subheading is None
 
 
+def test_attach_headings_non_item_before_item_is_not_subheading():
+    """A non-ITEM heading BEFORE an ITEM heading never becomes its subheading.
+
+    "PART I" precedes "ITEM 1. Business" on N-able page 7 and names the
+    enclosing part, not a subheading of ITEM 1. It must not be stored.
+    """
+    pages = [
+        _page(
+            1,
+            "ITEM 1. Business\n\nITEM 1A. Risk Factors\n\nITEM 2. Properties\n\nbody",
+            headings=[
+                "ITEM 1. Business",
+                "ITEM 1A. Risk Factors",
+                "ITEM 2. Properties",
+            ],
+        ),
+        _page(
+            2,
+            "PART I\n\nITEM 1. Business\n\nbody of business",
+            headings=["PART I", "ITEM 1. Business"],
+        ),
+    ]
+    chunks = [_chunk(0, 2, 2, text="body of business")]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "ITEM 1. Business"
+    assert result[0].subheading is None
+
+
+def test_attach_headings_report_of_auditor_not_subheading():
+    """The auditor's report title precedes the financial-statement ITEM headings.
+
+    On N-able page 83 the title comes first and names the report, not a
+    subheading of the ITEM headings that follow. It must not be captured.
+    """
+    pages = [
+        _page(
+            1,
+            "Report of Independent Registered Public Accounting Firm\n\n"
+            "ITEM 8. Financial Statements\n\n"
+            "ITEM 14. Principal Accountant Fees and Services\n\n"
+            "body",
+            headings=[
+                "Report of Independent Registered Public Accounting Firm",
+                "ITEM 8. Financial Statements",
+                "ITEM 14. Principal Accountant Fees and Services",
+            ],
+        ),
+    ]
+    chunks = [_chunk(0, 1, 1, text="body")]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "ITEM 14. Principal Accountant Fees and Services"
+    assert result[0].subheading is None
+
+
+def test_is_subheading_rejects_control_characters():
+    """Headings carrying private-use/format characters are not subheadings.
+
+    The N-able report's broken-font-mapping pages produce headings such as
+    "\x06,-70\x05\x01\x1b9.\x07" that pass every other text-pattern check.
+    """
+    from rag_agent.chunking.headings import _is_subheading
+
+    assert _is_subheading("\x06,-70\x05\x01\x1b9.\x07") is False
+    assert _is_subheading("\x1b9?0=0>?\x01\x17C;09>0") is False
+    # A real subheading is unaffected.
+    assert _is_subheading("Risk Factors") is True
+    assert _is_subheading("Significant Developments") is True
+
+
+def test_is_subheading_checks_text_patterns_only():
+    """_is_subheading inspects text patterns, not bold or font size.
+
+    The function has no access to the font signals that the ingestion
+    detector used, so it cannot confirm a candidate is bold or larger than
+    the body font. This test pins that contract: a heading that is merely
+    short and well-formed passes regardless of any typography.
+    """
+    from rag_agent.chunking.headings import _is_subheading
+
+    # "Risk Factors" passes on text alone; there is no bold/font-size input.
+    assert _is_subheading("Risk Factors") is True
+    # An ITEM heading never passes, even though it is well-formed.
+    assert _is_subheading("ITEM 1A. Risk Factors") is False
+
+
 def test_attach_headings_long_non_item_line_still_rejected():
     """A long line without an "Item NN." prefix is still capped at 60 chars."""
     long_cover = "X" * 100
