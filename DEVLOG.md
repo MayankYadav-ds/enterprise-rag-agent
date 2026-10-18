@@ -171,15 +171,18 @@ traced back to the PDF it came from without re-hydrating the chunk.
 
 ## Observations
 
-- **Headings are `None` on all 9 hits.** The ingestion step *does* detect
+- **Headings are now attached to chunks.** The ingestion step *does* detect
   headings — page 22 of the N-able 10-K has `headings: ['ITEM 1A. RISK FACTORS']`
   — but the default chunking strategy is `recursive`, which ignores page-level
-  headings entirely. Only `structure_aware` propagates them. See issue #25.
-  **Resolved (PR #1a):** `chunk_document()` now calls `attach_headings(chunks,
-  pages)` after the strategy chunks, so all three strategies get a
-  `section_heading` — the nearest preceding heading carried forward across
-  pages of the same document. Re-running the chunker on the real PDFs gives
-  236/243 heading-bearing chunks for N-able and 300/300 for NPS.
+  headings entirely, and only `structure_aware` propagated them. **Resolved
+  (PR #1a):** `chunk_document()` now calls `attach_headings(chunks, pages)`
+  after the strategy chunks, so all three strategies get a `section_heading` —
+  the nearest preceding heading carried forward across pages of the same
+  document. Re-running the chunker on the real PDFs gives 236/243
+  heading-bearing chunks for N-able and 300/300 for NPS. **Refined (PR #38):**
+  the assignment is now position-based within the page text, not page-level
+  carry-forward, so a chunk whose span contains an `ITEM` heading takes that
+  heading; see the "Fix heading hierarchy" section above.
 - **The royalties query returns three very similar scores** (0.7165, 0.7157,
   0.7155). The top hit is on page 58 of the NPS fixture, but the other two are
   a table row on page 45 and an accounting note on page 72 — the dense model
@@ -238,6 +241,71 @@ The `sync` method now returns a fourth key, `payload_updated`, and
 `scripts/index_documents.py` reports it in both the per-document line and the
 summary. A fresh `--recreate` run still shows `0 payload updated`, and a second
 idempotent run after recreate also shows `0` (the payload is already identical).
+
+### Re-running after the heading-hierarchy fix (PR #38)
+
+PR #38 added a `subheading` field to the chunk payload. The very first re-index
+after it was merged — a live re-index of the existing 543 points **without**
+`--recreate`, which is the whole point of the diff-based sync — produced:
+
+```
+2 documents, 0 chunks indexed, 543 skipped unchanged, 258 payload updated, 0 stale deleted, 59.84s total.
+```
+
+Nothing was upserted and nothing stale was deleted, but 258 of the 543 points
+were patched. A second run of the same command produced **543 skipped
+unchanged, 258 payload updated** again — the patch pass was not converging.
+
+**The real labels after PR #38.** The position-based assignment fixed the two
+misattributed chunks, but the new `subheading` field exposed a second bug.
+N-able pages 77–125 (the financial statements and the auditor's report) are now
+labelled `ITEM 14. PRINCIPAL ACCOUNTANT FEES AND SERVICES` because, in a
+10-K-structured document, only `ITEM` headings set `section_heading` and the
+last `ITEM` on the page carries forward over the F-pages that follow it. NPS
+page 96 lost its `ITEM 14` label (it had two chunks before; now one is
+`ITEM 13` and one is `ITEM 9B`). The per-heading coverage is:
+
+| Heading | Chunks | First | Last |
+| --- | --- | --- | --- |
+| nps, Product and Development Programs | 66 | p5 | p25 |
+| n-able, Report of Independent Registered Public Accounting Firm | 47 | p83 | p125 |
+| n-able, PART I | 41 | p7 | p21 |
+| nps, Consolidated Statements of Comprehensive Loss | 41 | p68 | p80 |
+| nps, Results of Operations | 38 | p49 | p60 |
+| nps, Proceeds from Available for Sale Securities | 37 | p82 | p94 |
+| nps, SPECIAL NOTE REGARDING FORWARD LOOKING STATEMENTS | 8 | p46 | p48 |
+| nps, UNITED STATES SECURITIES AND EXCHANGE COMMISSION | 4 | p1 | p2 |
+| nps, Summary of Liabilities Recorded at Carrying Value | 3 | p80 | p81 |
+| nps, Significant Developments | 2 | p4 | p4 |
+| nps, Product Indication Status Market | 1 | p5 | p5 |
+| n-able, PART II | 1 | p56 | p56 |
+
+**Root cause of the non-convergence.** The 543 points were indexed before the
+`subheading` field existed, so none of them carried a `subheading` key. The
+patch pass compared each stored payload against the fresh payload built by
+`QdrantStore._payload`, which now carries `subheading: None` for chunks without
+a subheading. Under a plain `dict ==` comparison, `{"subheading": None}` is not
+equal to `{}` — so every point looked changed and was re-patched on every run.
+
+The deeper reason is a Qdrant behaviour that differs between the local
+in-memory client and the live server: `upsert` keeps `null`-valued keys, but
+`set_payload` and `batch_update_points` **drop** them entirely (verified on the
+live server at `http://localhost:6333`). So a stored point that never had the
+key is never equal to a fresh payload carrying `field: None`, and the diff can
+never converge. The fix normalises the comparison — `None`, a missing key and
+`""` are all "no value" — and `_payload` now omits optional fields rather than
+storing them as `null`, so the patch stores a consistent form. A second run
+after the fix shows `0 payload updated`.
+
+**Subheading hygiene.** The `subheading` field also captured junk on the real
+filings: control-character soup from the N-able report's broken-font-mapping
+pages (`"\x06,-70\x05\x01\x1b9.\x07"`), the company's own legal name, table
+labels and statement titles. All of the garbage values live on low-text-quality
+pages that are excluded from chunking, but `_is_subheading` now rejects any
+heading containing non-printable characters, and a non-ITEM heading that
+appears *before* an ITEM heading on the same page (e.g. `PART I`, the auditor's
+report title) is no longer captured as that ITEM's subheading — it names the
+enclosing part or the report, not a subheading of the ITEM.
 
 ## Status
 

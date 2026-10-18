@@ -1,5 +1,52 @@
 # Decisions and trade-offs
 
+## Heading assignment strategy
+
+**Decision:** Use character-offset-based position matching within page text, not page-level last-heading carry-forward.
+
+**Why:** Page-level last-heading assignment fails when a chunk starts mid-page before a heading that is *inside* its text span. For example, N-able p75 chunk 191 starts at offset 2003 but contains `ITEM 8` at offset 2876 — carry-forward from p74's `ITEM 7A` would be correct only if no ITEM heading exists within the chunk's span. The fix checks for contained ITEM headings first, then falls back to backwards carry-forward.
+
+**Alternatives considered:**
+- *Sentence-level heading detection*: too fragile with PDF text extraction noise (hyphenation, wrapping, private-use characters).
+- *Font-size-based section detection*: works at ingestion time but not reliably at chunk time where heading text may be split across chunks.
+- *Full-document heading tree with nesting*: overkill for a flat ITEM structure; 10-K filings are flat (ITEM 1, 1A, 2, ...).
+
+**Trade-offs:**
+- Contained-ITEM check adds O(n) per chunk but only within the chunk's own page — negligible cost.
+- Non-ITEM headings (table labels, statement titles) are no longer section_heading in 10-K docs; they are optionally captured as `subheading`.
+
+## Subheading field
+
+**Decision:** Added `subheading: str | None` to the Chunk model and Qdrant payload.
+
+**Why:** Some documents have meaningful non-ITEM subheadings (e.g. "Risk Factors" under `ITEM 1A`). These provide better context for retrieval than the ITEM heading alone. However, in 10-K-structured docs, most non-ITEM "headings" detected by the PDF parser are table labels and statement titles — so only strict subheading candidates (bold, larger than body font, short, not a table label) are stored.
+
+**Trade-off:** Adds one field to the payload schema. The change is backward-compatible since existing points simply gain a `subheading: null` field when patched.
+
+**Subheading hygiene.** `_is_subheading` checks text patterns only — it has no access to the bold or font-size signals the ingestion detector used, so a candidate that passes is not guaranteed to be bold or larger than the body font. It also rejects headings containing non-printable characters (the N-able report's broken-font-mapping pages produce control-character soup such as `"\x06,-70\x05\x01\x1b9.\x07"`), and a non-ITEM heading that appears *before* an ITEM heading on the same page (e.g. `PART I`, the auditor's report title) is never captured as that ITEM's subheading — it names the enclosing part or the report, not a subheading of the ITEM.
+
+## Payload diff convergence
+
+**Decision:** The patch pass normalises the stored-vs-fresh payload comparison so that `None`, a missing key and `""` are all "no value", and `_payload` omits optional fields rather than storing them as `null`.
+
+**Why:** Qdrant's `upsert` keeps `null`-valued payload keys, but `set_payload` and `batch_update_points` drop them entirely (verified on the live server at `http://localhost:6333`). The 543 points indexed before the `subheading` field existed carried no such key, while the fresh payload carries `subheading: None`; under a plain `dict ==` comparison those are not equal, so the patch pass re-applied the same 258 points on every run and never converged. Normalising the comparison and omitting null optional fields makes the stored form consistent, so a second sync reports `0 payload updated`.
+
+**Trade-off:** The normalised comparison treats `""` and `None` as equal, which is the intended semantic for an absent value. A real empty-string field would be indistinguishable from a missing one; no field in the payload is ever legitimately empty.
+
+## 10-K structure detection threshold
+
+**Decision:** `_MIN_ITEM_HEADINGS = 3`.
+
+**Why:** Documents with fewer than 3 distinct ITEM headings are treated as non-10-K, where any valid heading (not just ITEM headings) can set `section_heading`. This preserves the original behavior for non-SEC documents while specialising for 10-K filings. The threshold of 3 was chosen because all real 10-Ks have at least 5–6 ITEM headings, and 3 provides a safe margin above any false positives from cover pages or table-of-contents.
+
+## Contained-ITEM rule
+
+**Decision:** A chunk whose text span contains an `ITEM` heading on its own page takes that heading; a chunk that straddles two `ITEM` boundaries is labelled with the later `ITEM`.
+
+**Why:** In a 10-K-structured document only `ITEM` headings set `section_heading`, so the last `ITEM` on a page carries forward over everything that follows it — including the financial-statement pages that come after the last `ITEM`. On the real filings this produces the wrong labels: N-able pages 77–125 (the financial statements and the auditor's report, 47 chunks) are labelled `ITEM 14. PRINCIPAL ACCOUNTANT FEES AND SERVICES`, and NPS page 96 loses its `ITEM 14` label (one of its two chunks becomes `ITEM 13`, the other `ITEM 9B`). The contained-ITEM check is the first thing tried for each chunk, so a chunk that literally contains an `ITEM` heading takes that heading rather than a carry-forward from an earlier page.
+
+**Trade-off:** This is a heuristic, not a parse of the document's actual section boundaries. 16 chunks in NPS and 21 in N-able contain an `ITEM` heading inside their span without starting at it — those chunks are labelled with the later `ITEM`, which is correct when the heading names the section the chunk belongs to and wrong when the chunk is tail text of the previous section. Treating `ITEM` headings as hard chunk boundaries would fix the boundary but requires re-embedding, because chunk text and chunk IDs change. Tracked as a known limitation.
+
 ## Chunking configuration
 
 **Provisional defaults (still to be validated in Phase 8):** chunk size
@@ -89,9 +136,29 @@ target set exactly.
 **Diff-based sync.** `QdrantStore.sync(doc_id, chunks, ...)` computes
 `existing = scroll_ids(doc_id)` and `target = {point_id(c.chunk_id) for c in
 chunks}`, then deletes `existing - target` and upserts only chunks whose ID is
-not already stored. It returns `{"upserted", "deleted", "skipped"}` and is
-scoped to one document, so syncing one document never deletes another's points.
-Re-running the indexer on unchanged input embeds 0 chunks.
+not already stored. It returns `{"upserted", "deleted", "skipped",
+"payload_updated"}` and is scoped to one document, so syncing one document
+never deletes another's points. Re-running the indexer on unchanged input
+embeds 0 chunks.
+
+**What the sync can and cannot prove.** The sync is diff-based, so re-running
+it on unchanged input converges: the second run reports `0 upserted, 0
+payload_updated, 0 stale deleted`. That is the only property asserted here —
+nothing about `batch_update_points` is claimed. Measured on the live server,
+`batch_update_points` is **not** atomic: a batch whose second operation targets
+a non-existent point raises a 404, but the first operation is still applied
+(verified by inserting two probe points and sending a batch whose second
+operation references a point that was never inserted). The patch pass is
+therefore not a transaction; it relies on the diff converging, not on the
+batch being all-or-nothing.
+
+**Payload patch convergence.** The patch pass compares each stored payload
+against the fresh one and patches only the differences. Qdrant's `upsert`
+keeps `null`-valued payload keys, but `set_payload` and `batch_update_points`
+drop them (verified on the live server). `_payload` therefore omits optional
+fields rather than storing them as `null`, and the comparison normalises `None`,
+a missing key and `""` as equal, so a point that never had a `subheading` key
+converges after one patch instead of being re-patched on every run.
 
 ## Quality threshold
 
