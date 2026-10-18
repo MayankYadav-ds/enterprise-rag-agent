@@ -468,6 +468,49 @@ def test_is_subheading_rejects_control_characters():
     assert _is_subheading("Significant Developments") is True
 
 
+def test_is_subheading_rejects_punctuation_token():
+    """A heading that is pure punctuation/symbols is not a subheading.
+
+    ":=" is the only such token on the real filings (detected on N-able
+    page 2, tq=1.000, so it is not excluded by the quality threshold). It
+    passes every other text-pattern check — it is short, printable, not a
+    table label or company name — but it names nothing, so it must not be
+    stored as a subheading. Without this check it would be carried forward
+    to chunks on pages 3-6 and force a re-patch on every sync.
+    """
+    from rag_agent.chunking.headings import _is_subheading
+
+    assert _is_subheading(":=") is False
+    assert _is_subheading("---") is False
+    assert _is_subheading("...") is False
+    assert _is_subheading("()") is False
+    # A real subheading is unaffected. "Risk Factors:" is rejected by the
+    # existing statement-title rule (trailing colon), not by the new
+    # alphanumeric check, so this assertion pins that the new check does
+    # not fire on a name that merely ends in a colon.
+    assert _is_subheading("Risk Factors:") is False
+    assert _is_subheading("Risk Factors") is True
+
+
+def test_is_subheading_rejects_symbol_soup():
+    """Headings that are mostly symbols are not subheadings.
+
+    The N-able report's broken-font-mapping pages produce tokens such as
+    "$6%24)3).'" and "$0A09@0" that are printable and contain digits, so
+    the non-printable and alphanumeric checks both pass them. A subheading
+    is text: it must contain a run of at least two consecutive letters.
+    """
+    from rag_agent.chunking.headings import _is_subheading
+
+    assert _is_subheading("$6%24)3).'") is False
+    assert _is_subheading("$0A09@0") is False
+    assert _is_subheading(":=") is False
+    # A real subheading is unaffected.
+    assert _is_subheading("Risk Factors") is True
+    assert _is_subheading("Significant Developments") is True
+    assert _is_subheading("UNITED STATES SECURITIES AND EXCHANGE COMMISSION") is True
+
+
 def test_is_subheading_checks_text_patterns_only():
     """_is_subheading inspects text patterns, not bold or font size.
 
