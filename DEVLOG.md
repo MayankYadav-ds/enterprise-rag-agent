@@ -142,7 +142,11 @@ torch from the CPU wheel index), logged to `.agent/index-run.log`.
 | Document | Chunks | Time |
 | --- | --- | --- |
 | n-able-2024-annual-financial-report.pdf | 243 | 61.29s |
-| sec-form-10-k-pdf-fixture.pdf | 300 | 30.87s |
+| sec-form-10-k-pdf-fixture.pdf[^1] | 300 | 30.87s |
+
+[^1]: This is the original name of the NPS fixture, recorded before it was
+renamed to `nps-pharmaceuticals-2013-10k.pdf`. The 300-chunk count is
+unchanged; only the file name changed.
 
 The N-able document ingested 125 pages with 11 tables and 44 low-text-quality
 warnings; 44 pages were excluded from chunking (see the known-limitation note

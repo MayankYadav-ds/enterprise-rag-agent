@@ -420,10 +420,10 @@ class TestQdrantStore:
             c.doc_id,
             [c],
             store.embedder,
-            source_file="/mnt/shared/raw/sec-form-10-k-pdf-fixture.pdf",
+            source_file="/mnt/shared/raw/nps-pharmaceuticals-2013-10k.pdf",
         )
         hits = store.search(store.embedder.embed_query("x"), top_k=10)
-        assert hits[0].payload["source_file"] == "sec-form-10-k-pdf-fixture.pdf"
+        assert hits[0].payload["source_file"] == "nps-pharmaceuticals-2013-10k.pdf"
 
     def test_payload_updated_zero_when_unchanged(self, store):
         """Re-syncing identical chunks must not patch any payload."""
