@@ -35,6 +35,14 @@ The optional fields are written as `None` rather than omitted for a second reaso
 
 **Trade-off:** The normalised comparison treats `""` and `None` as equal, which is the intended semantic for an absent value. A real empty-string field would be indistinguishable from a missing one; no field in the payload is ever legitimately empty. The patch now always carries every optional field, which is a larger payload per `SetPayloadOperation` but is bounded by the number of optional fields (one today).
 
+**Why not `delete_payload`.** The alternative to writing `None` for a field whose fresh value is absent is Qdrant's explicit `delete_payload(keys=[...])`, which removes the key outright. It was evaluated and rejected for three reasons:
+
+1. **It is a separate API call per field, not a batch operation.** `batch_update_points` carries many `SetPayloadOperation`s in one request; `delete_payload` is one request per key, so clearing one optional field on 543 points costs 543 extra requests instead of being folded into the existing patch batch.
+2. **It does not converge the same way.** A point that never had the key is already consistent under the normaliser; `delete_payload` on a missing key is a no-op that still costs a request, so the "second run reports 0" property requires an extra guard to skip it. Writing `None` needs no such guard — the normaliser treats the two forms as equal.
+3. **It is not what the live server does for `upsert`.** The code path that created the original points (`QdrantStore.upsert`) keeps `null`-valued keys. Using `delete_payload` in the patch pass would make the stored form diverge from what a fresh upsert produces, so the diff would never converge for points that were never patched.
+
+The one case where `delete_payload` would be strictly better is a field that is being *removed from the schema entirely* — there, `None` leaves a tombstone key on every point while `delete_payload` removes it. That is a one-time migration, not a per-sync operation, and is tracked separately.
+
 ## 10-K structure detection threshold
 
 **Decision:** `_MIN_ITEM_HEADINGS = 3`.

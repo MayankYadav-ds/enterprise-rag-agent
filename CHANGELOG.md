@@ -1,6 +1,10 @@
 # Changelog
 
-## [Fix heading hierarchy] — fix/heading-hierarchy
+## [Fix heading hierarchy] — PR #41
+
+Shipped by [PR #41](https://github.com/MayankYadav-ds/enterprise-rag-agent/pull/41).
+The same work was drafted as PR #40, which was closed unmerged; it was
+re-landed as #41 and merged into main at `8e0ba89`.
 
 - **fix(store):** `QdrantStore._payload` now writes optional fields as `None`
   when absent rather than omitting them, and the patch pass normalises the
@@ -33,6 +37,25 @@
   null-dropping behaviour, so the convergence bug is visible in CI: a point
   lacking `subheading` is patched once and a second sync reports
   `payload_updated == 0`; a changed subheading is patched.
+
+## [Audit extras: dead-check removal, non-10-K span test, delete_payload trade-off] — PR #42
+
+- **fix(chunking):** `_is_subheading` dropped the `any(ch.isalnum() for ch in
+  stripped)` check, which was provably dead — the two-letters regex
+  `[A-Za-z]{2,}` that follows it is a strict superset, so no heading could
+  reach the regex after failing the isalnum() check. The docstring now notes
+  that the regex is ASCII-only, which is a deliberate trade-off: it rejects
+  accented headings such as "Café", which the real filings do not contain.
+- **test(chunking):** `test_attach_headings_non_10k_heading_inside_chunk_span_takes_priority`
+  covers `attach_headings` for a document without 10-K structure — a heading
+  inside a chunk's span takes priority over carry-forward, the same as for a
+  10-K. The contained-heading rule was previously gated on `has_item_structure`.
+- **docs:** `docs/DECISIONS.md` records why `delete_payload(keys=[...])` was
+  rejected in favour of writing `None` for absent optional fields: it is a
+  separate request per field rather than a batch operation, it does not
+  converge without an extra guard, and it would diverge from what `upsert`
+  produces. The one case where it is strictly better — removing a field from
+  the schema entirely — is a one-time migration, not a per-sync operation.
 
 ## [Phase 4 — embeddings and Qdrant] — feat/embeddings-qdrant
 
