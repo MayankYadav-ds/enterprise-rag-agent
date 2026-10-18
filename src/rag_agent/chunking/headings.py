@@ -94,6 +94,13 @@ _HEADING_PATTERN_YEAR_RANGE = re.compile(
 )
 _HEADING_PATTERN_DIGITS_ONLY = re.compile(r"^[\d,\s().]+$")
 
+# A subheading is text, so it must contain a run of at least two consecutive
+# letters. This rejects garbage from broken font mappings such as
+# "$6%24)3).'" and "$0A09@0" — printable, digit-bearing tokens that pass
+# every other text-pattern check. Safe on the real filings: all nine NPS
+# subheadings have such a run and the three junk values do not.
+_HEADING_PATTERN_TWO_LETTERS = re.compile(r"[A-Za-z]{2,}")
+
 # Normalise whitespace for heading/text comparison (clean_text collapses runs
 # of whitespace, so a stored heading may not be a literal substring of the page
 # text).
@@ -140,6 +147,24 @@ def _is_subheading(heading: str) -> bool:
     # live on low-text-quality pages that are excluded from chunking anyway,
     # but the check keeps the subheading field honest.
     if not stripped.isprintable():
+        return False
+    # Reject headings that are pure punctuation/symbols. Ingestion's
+    # clean_text drops private-use glyphs and format characters but keeps
+    # ordinary punctuation, so a stray token such as ":=" (the only one on
+    # the real filings, detected on N-able page 2) passes every other text
+    # check. A subheading names something; a token with no letter or digit
+    # does not. (This is a second filter alongside the non-printable check
+    # above: the control-character soup contains digits, so it is caught
+    # only by isprintable().)
+    if not any(ch.isalnum() for ch in stripped):
+        return False
+    # Reject headings that are mostly symbols — garbage from broken font
+    # mappings such as "$6%24)3).'" and "$0A09@0", which are printable and
+    # contain digits so the two checks above pass them. A subheading is
+    # text: it must contain a run of at least two consecutive letters. This
+    # is safe on the real filings — all nine NPS subheadings have such a
+    # run, and the three junk values do not.
+    if not _HEADING_PATTERN_TWO_LETTERS.search(stripped):
         return False
     return True
 
