@@ -2,25 +2,31 @@
 
 ## [Fix heading hierarchy] — fix/heading-hierarchy
 
-- **fix(store):** `QdrantStore._payload` now omits optional fields with no value
-  instead of storing them as `null`, and the patch pass normalises the
+- **fix(store):** `QdrantStore._payload` now writes optional fields as `None`
+  when absent rather than omitting them, and the patch pass normalises the
   stored-vs-fresh comparison so `None`, a missing key and `""` are all "no
   value". The 543 points indexed before the `subheading` field existed carried
-  no such key, while the fresh payload carried `subheading: None`; Qdrant's
+  no such key, while the fresh payload carries `subheading: None`; Qdrant's
   `set_payload` / `batch_update_points` drop null keys (verified on the live
   server), so the two were never equal under a plain `dict ==` comparison and
   the patch pass re-applied the same 258 points on every run. A second run
-  after the fix reports `0 payload updated`.
+  after the fix reports `0 payload updated`. Writing `None` (rather than
+  omitting) also clears stale values left by older code — on the live server
+  only an explicit `null` removes a key from a patch, which clears 41 points
+  carrying `subheading: "PART I"` and 47 carrying the auditor's report title
+  (written before the 10-K marker whitelist).
 - **fix(chunking):** `attach_headings` no longer captures a non-ITEM heading
   that appears *before* an ITEM heading on the same page as that ITEM's
   subheading. `PART I` (N-able p7), `PART II` (p56), `PART III` (p77) and the
   auditor's report title (p83) name the enclosing part or the report, not a
   subheading of the ITEM headings that follow.
 - **fix(chunking):** `_is_subheading` rejects headings containing non-printable
-  characters. The N-able report's broken-font-mapping pages produce headings
-  such as `"\x06,-70\x05\x01\x1b9.\x07"` that pass every other text-pattern
-  check; all of the garbage values live on low-text-quality pages that are
-  excluded from chunking, but the field is now honest regardless.
+  characters, and headings that are pure punctuation/symbols or mostly symbols
+  (a run of two consecutive letters is required). The N-able report's
+  broken-font-mapping pages produce `"\x06,-70\x05\x01\x1b9.\x07"`, `:=`,
+  `$6%24)3).'"` and `$0A09@0` — all printable with digits, so they passed the
+  earlier checks. A real subheading is text; the new rule rejects the junk
+  and is safe on the real filings (all nine NPS subheadings survive).
 - **fix(chunking):** `attach_headings` docstring now states that `_is_subheading`
   checks text patterns only, not bold or font size.
 - **test(store):** a `_NullDroppingClient` fixture reproduces the live server's
