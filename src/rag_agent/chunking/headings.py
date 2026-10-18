@@ -275,6 +275,23 @@ def _is_section_heading(heading: str) -> bool:
     return _is_item_heading(heading) or _is_section_marker(heading)
 
 
+def _contained_section_heading(
+    offsets: list[tuple[int, str]], chunk_start: int, chunk_end: int
+) -> str | None:
+    """Return the last section heading inside a chunk's text span, or None.
+
+    A section heading is an "Item NN. Title" line or a 10-K section marker.
+    Used in two places with different preconditions: when the chunk text was
+    located in the page text (the heading is literally inside the chunk) and
+    as a fallback when it was not (the span is an approximation, so the result
+    is only used when nothing better was found).
+    """
+    contained = [
+        h for off, h in offsets if chunk_start <= off <= chunk_end and _is_section_heading(h)
+    ]
+    return contained[-1] if contained else None
+
+
 def _is_valid_heading(heading: str) -> bool:
     """Return True if the heading passes the validation rules.
 
@@ -389,16 +406,16 @@ def attach_headings(chunks: list[Chunk], pages: list[PageContent]) -> list[Chunk
         # (e.g. N-able p75 chunk starting at offset 2003 with ITEM 8 at offset
         # 2876) and chunks that begin at the heading itself. It takes priority
         # over carry-forward from earlier pages because the heading is
-        # literally inside the chunk's content.
-        if has_item_structure and chunk_start >= 0 and found_in_text:
+        # literally inside the chunk's content. Not gated on
+        # has_item_structure: a non-10-K document has no ITEM headings, but a
+        # section marker (or any heading) inside the span still names the
+        # section, and the backwards walk would otherwise carry forward an
+        # earlier page's heading instead.
+        if chunk_start >= 0 and found_in_text:
             offsets = heading_offsets.get(chunk.page_start, [])
-            contained_section = [
-                h
-                for off, h in offsets
-                if chunk_start <= off <= chunk_end and _is_section_heading(h)
-            ]
+            contained_section = _contained_section_heading(offsets, chunk_start, chunk_end)
             if contained_section:
-                section_heading = contained_section[0]
+                section_heading = contained_section
 
         # Walk backwards through pages <= chunk.page_start to find the nearest
         # preceding heading at or before the chunk's start offset.
@@ -479,13 +496,7 @@ def attach_headings(chunks: list[Chunk], pages: list[PageContent]) -> list[Chunk
         # fall back to headings within the chunk's text span on the first page.
         if section_heading is None and chunk_start >= 0:
             offsets = heading_offsets.get(chunk.page_start, [])
-            section_in_span = [
-                h
-                for off, h in offsets
-                if chunk_start <= off <= chunk_end and _is_section_heading(h)
-            ]
-            if section_in_span:
-                section_heading = section_in_span[-1]
+            section_heading = _contained_section_heading(offsets, chunk_start, chunk_end)
 
         # Create a new chunk with the heading attached (chunk_id unchanged)
         if (
