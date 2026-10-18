@@ -119,6 +119,13 @@ def _is_subheading(heading: str) -> bool:
     not guaranteed to be bold or larger than the body font. The stricter
     ingestion detector already rejected most table labels and statement
     titles; this check is the second, text-pattern-only filter.
+
+    The two-letters check is ASCII-only: ``[A-Za-z]{2,}`` does not match
+    accented or non-Latin text, so a heading such as "Café" or "Résumé" is
+    rejected even though it is a real subheading. That is a deliberate
+    trade-off — the real filings contain no such headings, and the check
+    exists to reject symbol soup from broken font mappings, not to judge
+    typography.
     """
     stripped = heading.strip()
     if not stripped or _is_item_heading(stripped):
@@ -148,22 +155,12 @@ def _is_subheading(heading: str) -> bool:
     # but the check keeps the subheading field honest.
     if not stripped.isprintable():
         return False
-    # Reject headings that are pure punctuation/symbols. Ingestion's
-    # clean_text drops private-use glyphs and format characters but keeps
-    # ordinary punctuation, so a stray token such as ":=" (the only one on
-    # the real filings, detected on N-able page 2) passes every other text
-    # check. A subheading names something; a token with no letter or digit
-    # does not. (This is a second filter alongside the non-printable check
-    # above: the control-character soup contains digits, so it is caught
-    # only by isprintable().)
-    if not any(ch.isalnum() for ch in stripped):
-        return False
-    # Reject headings that are mostly symbols — garbage from broken font
-    # mappings such as "$6%24)3).'" and "$0A09@0", which are printable and
-    # contain digits so the two checks above pass them. A subheading is
-    # text: it must contain a run of at least two consecutive letters. This
-    # is safe on the real filings — all nine NPS subheadings have such a
-    # run, and the three junk values do not.
+    # Reject headings that are pure punctuation/symbols (":=") and headings
+    # that are mostly symbols — garbage from broken font mappings such as
+    # "$6%24)3).'" and "$0A09@0". These are printable and digit-bearing, so
+    # the checks above pass them; a subheading is text, so it must contain a
+    # run of at least two consecutive letters. All nine real NPS subheadings
+    # have such a run and the three junk values do not.
     if not _HEADING_PATTERN_TWO_LETTERS.search(stripped):
         return False
     return True
