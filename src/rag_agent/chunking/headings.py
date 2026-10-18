@@ -62,6 +62,25 @@ _MAX_ITEM_HEADING_LENGTH = 160
 # (any valid heading can set section_heading) is kept.
 _MIN_ITEM_HEADINGS = 3
 
+# 10-K section markers that are not "Item NN." lines but name a section of the
+# filing. In a 10-K-structured document only ITEM headings set
+# section_heading, which is why the auditor's report title and the index to
+# the financial statements do not — and the last ITEM then carries forward
+# over the F-pages that follow it (N-able p83-125, 47 chunks, labelled
+# "ITEM 14. PRINCIPAL ACCOUNTANT FEES AND SERVICES"). These markers also set
+# section_heading, case-insensitively, and only when they are matched against
+# a heading actually detected by the parser — a substring of page text is
+# never promoted to a heading on its own.
+_SECTION_MARKERS = (
+    "Report of Independent Registered Public Accounting Firm",
+    "Index to Consolidated Financial Statements",
+    "Signatures",
+    "PART I",
+    "PART II",
+    "PART III",
+    "PART IV",
+)
+
 # Subheading candidates must pass this stricter test on top of
 # _is_valid_heading: they must be bold, larger than the body font, and not a
 # table header, statement title, or line label. Year-range and digits-only
@@ -208,6 +227,29 @@ def _is_item_heading(heading: str) -> bool:
     return bool(_HEADING_PATTERN_ITEM.match(heading.strip()))
 
 
+def _is_section_marker(heading: str) -> bool:
+    """Return True if the heading is a 10-K section marker.
+
+    These are the non-ITEM headings that name a section of the filing: the
+    auditor's report, the index to the financial statements, the signature
+    page and the Part dividers. They are matched case-insensitively against
+    headings the parser actually detected, so a substring of page text is
+    never promoted to a heading on its own.
+    """
+    return heading.strip().upper() in {marker.upper() for marker in _SECTION_MARKERS}
+
+
+def _is_section_heading(heading: str) -> bool:
+    """Return True if the heading sets section_heading in a 10-K document.
+
+    An "Item NN. Title" line or one of the 10-K section markers. In a
+    10-K-structured document these are the only headings that name a
+    section; everything else (table labels, statement titles, company
+    names) is skipped so the walk continues to the nearest ITEM or marker.
+    """
+    return _is_item_heading(heading) or _is_section_marker(heading)
+
+
 def _is_valid_heading(heading: str) -> bool:
     """Return True if the heading passes the validation rules.
 
@@ -316,19 +358,22 @@ def attach_headings(chunks: list[Chunk], pages: list[PageContent]) -> list[Chunk
 
         chunk_start, chunk_end, found_in_text = chunk_offsets[index]
 
-        # When the chunk's own text span contains an ITEM heading, that heading
-        # names the section the chunk belongs to. This catches chunks that begin
-        # mid-page after an ITEM heading (e.g. N-able p75 chunk starting at
-        # offset 2003 with ITEM 8 at offset 2876) and chunks that begin at the
-        # heading itself. It takes priority over carry-forward from earlier
-        # pages because the heading is literally inside the chunk's content.
+        # When the chunk's own text span contains a section heading (an ITEM line
+        # or a 10-K section marker), that heading names the section the chunk
+        # belongs to. This catches chunks that begin mid-page after a heading
+        # (e.g. N-able p75 chunk starting at offset 2003 with ITEM 8 at offset
+        # 2876) and chunks that begin at the heading itself. It takes priority
+        # over carry-forward from earlier pages because the heading is
+        # literally inside the chunk's content.
         if has_item_structure and chunk_start >= 0 and found_in_text:
             offsets = heading_offsets.get(chunk.page_start, [])
-            contained_items = [
-                h for off, h in offsets if chunk_start <= off <= chunk_end and _is_item_heading(h)
+            contained_section = [
+                h
+                for off, h in offsets
+                if chunk_start <= off <= chunk_end and _is_section_heading(h)
             ]
-            if contained_items:
-                section_heading = contained_items[0]
+            if contained_section:
+                section_heading = contained_section[0]
 
         # Walk backwards through pages <= chunk.page_start to find the nearest
         # preceding heading at or before the chunk's start offset.
@@ -361,44 +406,45 @@ def attach_headings(chunks: list[Chunk], pages: list[PageContent]) -> list[Chunk
                 preceding = [h for off, h in offsets if off <= limit]
                 if preceding:
                     if has_item_structure:
-                        item_preceding = [h for h in preceding if _is_item_heading(h)]
-                        if item_preceding:
-                            section_heading = item_preceding[-1]
-                            # Even when an ITEM heading is found, capture a
-                            # non-ITEM subheading that comes AFTER it on the
-                            # same page (e.g. "Risk Factors" under ITEM 1A).
-                            # A non-ITEM heading that appears BEFORE the ITEM
-                            # heading (e.g. "PART I" on N-able p7, "Report of
-                            # Independent Registered Public Accounting Firm"
-                            # on N-able p83) names the enclosing part or the
-                            # auditor's report, not a subheading of the ITEM,
-                            # so it is not captured here.
+                        section_preceding = [h for h in preceding if _is_section_heading(h)]
+                        if section_preceding:
+                            section_heading = section_preceding[-1]
+                            # Even when a section heading is found, capture a
+                            # non-section subheading that comes AFTER it on
+                            # the same page (e.g. "Risk Factors" under ITEM
+                            # 1A). A non-section heading that appears BEFORE
+                            # the section heading (e.g. "PART I" on N-able
+                            # p7, "Report of Independent Registered Public
+                            # Accounting Firm" on N-able p83) names the
+                            # enclosing part or the auditor's report, not a
+                            # subheading of the section, so it is not
+                            # captured here.
                             if subheading is None:
-                                last_item_offset = max(
+                                last_section_offset = max(
                                     off
                                     for off, h in offsets
-                                    if off <= limit and _is_item_heading(h)
+                                    if off <= limit and _is_section_heading(h)
                                 )
-                                non_item_after = [
+                                non_section_after = [
                                     h
                                     for off, h in offsets
-                                    if last_item_offset < off <= limit
-                                    and not _is_item_heading(h)
+                                    if last_section_offset < off <= limit
+                                    and not _is_section_heading(h)
                                     and _is_subheading(h)
                                 ]
-                                if non_item_after:
-                                    subheading = non_item_after[-1]
+                                if non_section_after:
+                                    subheading = non_section_after[-1]
                             break
-                        # Non-ITEM headings (statement titles, etc.) do not
-                        # set section_heading but may still inform
-                        # subheading. Keep walking backwards to find an ITEM
-                        # heading from an earlier page; capture subheading
-                        # candidates along the way.
-                        non_item_preceding = [
-                            h for h in preceding if not _is_item_heading(h) and _is_subheading(h)
+                        # Non-section headings (statement titles, etc.) do
+                        # not set section_heading but may still inform
+                        # subheading. Keep walking backwards to find a
+                        # section heading from an earlier page; capture
+                        # subheading candidates along the way.
+                        non_section_preceding = [
+                            h for h in preceding if not _is_section_heading(h) and _is_subheading(h)
                         ]
-                        if non_item_preceding and subheading is None:
-                            subheading = non_item_preceding[-1]
+                        if non_section_preceding and subheading is None:
+                            subheading = non_section_preceding[-1]
                     else:
                         section_heading = preceding[-1]
                         break
@@ -408,11 +454,13 @@ def attach_headings(chunks: list[Chunk], pages: list[PageContent]) -> list[Chunk
         # fall back to headings within the chunk's text span on the first page.
         if section_heading is None and chunk_start >= 0:
             offsets = heading_offsets.get(chunk.page_start, [])
-            item_preceding = [
-                h for off, h in offsets if chunk_start <= off <= chunk_end and _is_item_heading(h)
+            section_in_span = [
+                h
+                for off, h in offsets
+                if chunk_start <= off <= chunk_end and _is_section_heading(h)
             ]
-            if item_preceding:
-                section_heading = item_preceding[-1]
+            if section_in_span:
+                section_heading = section_in_span[-1]
 
         # Create a new chunk with the heading attached (chunk_id unchanged)
         if (

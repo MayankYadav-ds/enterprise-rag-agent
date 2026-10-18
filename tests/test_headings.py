@@ -500,3 +500,125 @@ def test_attach_headings_item_title_too_long_rejected():
     chunks = [_chunk(0, 1, 1)]
     result = attach_headings(chunks, pages)
     assert result[0].section_heading is None
+
+
+# --- 10-K section markers ---------------------------------------------------
+
+from rag_agent.chunking.headings import _is_section_marker  # noqa: E402
+
+
+def test_is_section_marker_matches_case_insensitively():
+    """The 10-K section markers are matched case-insensitively."""
+    assert _is_section_marker("Report of Independent Registered Public Accounting Firm")
+    assert _is_section_marker("report of independent registered public accounting firm")
+    assert _is_section_marker("Index to Consolidated Financial Statements")
+    assert _is_section_marker("Signatures")
+    assert _is_section_marker("PART I")
+    assert _is_section_marker("part ii")
+    assert _is_section_marker("PART III")
+    assert _is_section_marker("PART IV")
+
+
+def test_is_section_marker_rejects_non_markers():
+    """A heading that is not on the whitelist is not a section marker."""
+    assert not _is_section_marker("ITEM 1. Business")
+    assert not _is_section_marker("Risk Factors")
+    assert not _is_section_marker("Consolidated Balance Sheets Data:")
+    assert not _is_section_marker("NPS PHARMACEUTICALS, INC.")
+
+
+def test_attach_headings_auditor_report_marker_sets_section_heading():
+    """The auditor's report title sets section_heading in a 10-K document.
+
+    On N-able page 83 the title is detected and kept (tq=1.000) but, before
+    the whitelist, only ITEM headings set section_heading, so the last ITEM
+    (ITEM 14 on p77) carried forward over the F-pages that follow it and all
+    47 chunks on p83-125 were mislabelled.
+    """
+    pages = [
+        _page(
+            1,
+            "ITEM 14. Principal Accountant Fees and Services\n\n"
+            "Report of Independent Registered Public Accounting Firm\n\n"
+            "financial statement body",
+            headings=[
+                "ITEM 14. Principal Accountant Fees and Services",
+                "Report of Independent Registered Public Accounting Firm",
+            ],
+        ),
+        _page(2, "audit opinion text", headings=[]),
+    ]
+    chunks = [_chunk(0, 2, 2, text="audit opinion text")]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "Report of Independent Registered Public Accounting Firm"
+    assert result[0].subheading is None
+
+
+def test_attach_headings_part_marker_sets_section_heading():
+    """A PART divider sets section_heading and replaces the carry-forward."""
+    pages = [
+        _page(
+            1,
+            "ITEM 1. Business\n\nITEM 1A. Risk Factors\n\nITEM 2. Properties\n\nbody",
+            headings=["ITEM 1. Business", "ITEM 1A. Risk Factors", "ITEM 2. Properties"],
+        ),
+        _page(
+            2,
+            "PART II\n\nITEM 5. Market for Registrant's Common Equity\n\nbody",
+            headings=["PART II", "ITEM 5. Market for Registrant's Common Equity"],
+        ),
+    ]
+    chunks = [_chunk(0, 2, 2, text="body")]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "ITEM 5. Market for Registrant's Common Equity"
+
+
+def test_attach_headings_marker_inside_chunk_span_takes_priority():
+    """A section marker inside a chunk's span beats carry-forward.
+
+    The chunk on N-able p77 starts at offset 1773 (after ITEM 13) and its
+    span contains ITEM 14, so it takes ITEM 14 rather than the PART III
+    heading at offset 0.
+    """
+    pages = [
+        _page(
+            1,
+            "PART III\n\nITEM 13. Certain Relationships\n\n"
+            "ITEM 14. Principal Accountant Fees and Services\n\nbody",
+            headings=[
+                "PART III",
+                "ITEM 13. Certain Relationships",
+                "ITEM 14. Principal Accountant Fees and Services",
+            ],
+        ),
+    ]
+    chunks = [
+        _chunk(
+            0,
+            1,
+            1,
+            text="ITEM 13. Certain Relationships\n\n"
+            "ITEM 14. Principal Accountant Fees and Services\n\nbody",
+        )
+    ]
+    result = attach_headings(chunks, pages)
+    assert result[0].section_heading == "ITEM 14. Principal Accountant Fees and Services"
+
+
+def test_attach_headings_non_10k_document_unchanged():
+    """A document without 10-K structure is unaffected by the whitelist.
+
+    Below _MIN_ITEM_HEADINGS the previous behaviour is kept: any valid
+    heading sets section_heading, and the markers are not special.
+    """
+    pages = [
+        _page(
+            1,
+            "Report of Independent Registered Public Accounting Firm\n\nbody",
+            headings=["Report of Independent Registered Public Accounting Firm"],
+        ),
+    ]
+    chunks = [_chunk(0, 1, 1, text="body")]
+    result = attach_headings(chunks, pages)
+    # Non-10-K: the marker is just another valid heading.
+    assert result[0].section_heading == "Report of Independent Registered Public Accounting Firm"
