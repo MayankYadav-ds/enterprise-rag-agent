@@ -437,9 +437,11 @@ class QdrantStore:
             fresh_value = fresh.get(key)
             if stored_value == fresh_value:
                 continue
-            # Normalise "no value" representations. ``in`` is used rather than
-            # ``or`` so that a real empty string on one side is not mistaken
-            # for a non-empty value on the other when both are absent.
+            # Normalise "no value" representations: None, a missing key and "" are
+            # all the same thing, so the comparison is checked on each side
+            # separately rather than with ``or`` (which would let a real
+            # empty string on one side be treated as a non-empty value when
+            # the other side is absent).
             if stored_value in (None, "") and fresh_value in (None, ""):
                 continue
             return False
