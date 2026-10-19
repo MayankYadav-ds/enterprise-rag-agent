@@ -3,8 +3,14 @@
 ## [Fix heading hierarchy] — PR #41
 
 Shipped by [PR #41](https://github.com/MayankYadav-ds/enterprise-rag-agent/pull/41).
-The same work was drafted as PR #40, which was closed unmerged; it was
-re-landed as #41 and merged into main at `8e0ba89`.
+PR #40 was closed unmerged (`mergedAt` null, branch `fix/heading-convergence`
+since deleted). The whitelist commit `6f30f50` ("10-K section markers set
+section_heading") reached `main` by a direct push of PR #40's rebased
+commits — `git cherry -v origin/main origin/fix/heading-convergence` showed
+three of its four commits as patch-equivalent to commits already on `main`
+(including `6f30f50`) and only the comment-only commit `3a69f33` as extra —
+not by the GitHub merge. PR #41 then merged the remaining three commits on
+top (`36c7132`, `bebb5e1`, `8e0ba89`) at `8e0ba89`.
 
 - **fix(store):** `QdrantStore._payload` now writes optional fields as `None`
   when absent rather than omitting them, and the patch pass normalises the
