@@ -39,12 +39,6 @@ flowchart LR
 
 ## Quick start
 
-Phase 9 will provide the final one-command demo:
-
-```bash
-docker-compose up --build
-```
-
 For the current foundation, create a Python 3.11 virtual environment and run the quality checks:
 
 ```bash
@@ -164,7 +158,28 @@ scripts/               Repeatable developer commands
 
 ## Limitations and future work
 
-The current repository does not include OCR: image-only/scanned pages are warned about and skipped. PDF font encodings can also produce unreadable glyph mappings, and complex unruled financial tables can split into fragments. Phase 2 validation notes document both observations and the next steps; future work includes OCR, table-region merging, and page-render-based quality checks. Vector storage and indexing are implemented in Phase 4; retrieval, answer generation, evaluation, and a Dockerised UI arrive in later phases.
+The current repository does not include OCR: image-only/scanned pages are warned about and skipped. PDF font encodings can also produce unreadable glyph mappings, and complex unruled financial tables can split into fragments. Phase 2 validation notes document both observations and the next steps; future work includes OCR, table-region merging, and page-render-based quality checks.
+
+## Roadmap (planned, not implemented)
+
+These phases are not built yet. The packages named below contain only a stub
+docstring — nothing in them is implemented, imported, or installed.
+
+- **Phase 5 — Retrieval.** `src/rag_agent/retrieval/`: BM25 and dense-vector
+  retrieval with reciprocal-rank fusion and a cross-encoder reranker.
+- **Phase 6 — Answer generation.** `src/rag_agent/generation/`: grounded answers
+  streamed over Server-Sent Events with document and page citations.
+- **Phase 7 — HTTP API.** `src/rag_agent/api/`: `/ingest`, `/query`, and
+  `/health` endpoints (FastAPI, not yet a dependency).
+- **Phase 8 — Evaluation.** `src/rag_agent/evaluation/`: RAGAS and retrieval
+  metrics against a reproducible gold set, with an ablation table of measured
+  results in [docs/EVALUATION.md](docs/EVALUATION.md).
+- **Phase 9 — Dockerised demo.** A one-command demo (`docker compose up`)
+  would need a `Dockerfile` that does not exist yet; today Qdrant is run via
+  `docker-compose.yml` and indexing via the manual `docker run` commands in
+  [Docker (recommended)](#docker-recommended).
+- **Phase 10 — Hardening.** Authentication, rate limiting, and production
+  deployment configuration.
 
 ## Contributing
 

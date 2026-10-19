@@ -650,8 +650,8 @@ class TestSourceFileName:
 
     def test_absolute_path(self):
         assert (
-            _source_file_name("/mnt/shared/raw/sec-form-10-k-pdf-fixture.pdf")
-            == "sec-form-10-k-pdf-fixture.pdf"
+            _source_file_name("/mnt/shared/raw/nps-pharmaceuticals-2013-10k.pdf")
+            == "nps-pharmaceuticals-2013-10k.pdf"
         )
 
     def test_windows_separator(self):

@@ -115,3 +115,24 @@ fusion and a cross-encoder reranker; generation will stream grounded answers
 over Server-Sent Events with document and page citations; evaluation will run
 RAGAS and retrieval metrics against a reproducible gold set. These phases are
 built incrementally and documented in [docs/DECISIONS.md](docs/DECISIONS.md).
+
+## Roadmap (planned, not implemented)
+
+The packages above are stubs: their `__init__.py` files carry a docstring and
+nothing else, and nothing in them is imported or installed. The planned scope
+of each phase:
+
+- **Phase 5 — Retrieval** (`src/rag_agent/retrieval/`): BM25 and dense-vector
+  retrieval with reciprocal-rank fusion and a cross-encoder reranker.
+- **Phase 6 — Answer generation** (`src/rag_agent/generation/`): grounded
+  answers streamed over Server-Sent Events with document and page citations.
+- **Phase 7 — HTTP API** (`src/rag_agent/api/`): `/ingest`, `/query`, and
+  `/health` endpoints.
+- **Phase 8 — Evaluation** (`src/rag_agent/evaluation/`): RAGAS and retrieval
+  metrics against a reproducible gold set; measured results go in
+  [docs/EVALUATION.md](EVALUATION.md).
+- **Phase 9 — Dockerised demo**: a one-command demo would need a `Dockerfile`
+  that does not exist yet. Today Qdrant runs via `docker-compose.yml` and
+  indexing runs via the manual `docker run` commands in the README.
+- **Phase 10 — Hardening**: authentication, rate limiting, production
+  deployment configuration.
