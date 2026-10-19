@@ -48,6 +48,18 @@ ruff check .
 pytest
 ```
 
+The tokenizer path (`src/rag_agent/utils/lazy_tokenizer.py`, used by the
+token-limit measurements in [`docs/TOKEN_LIMIT_REPORT.md`](docs/TOKEN_LIMIT_REPORT.md))
+needs the model's WordPiece tokenizer but not the embedding model, so it pulls
+in a smaller extra that does not require torch:
+
+```bash
+python -m pip install -e ".[tokenizer]"
+```
+
+`[embeddings]` adds `sentence-transformers` (and torch) on top of `[tokenizer]`,
+so the full indexing pipeline needs `.[embeddings]`.
+
 Copy `.env.example` to `.env` before configuring a model provider. Do not commit `.env` or API keys.
 
 ## Indexing PDFs

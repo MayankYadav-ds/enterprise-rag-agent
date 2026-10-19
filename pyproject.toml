@@ -33,8 +33,13 @@ dev = [
   "reportlab>=4.2,<5",
   "ruff>=0.5,<1",
 ]
+tokenizer = [
+  "tokenizers>=0.20,<1",
+  "huggingface_hub>=0.24,<1",
+]
 embeddings = [
   "sentence-transformers>=4,<7",
+  "tokenizer",
 ]
 
 [project.urls]
