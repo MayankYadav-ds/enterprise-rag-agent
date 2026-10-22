@@ -10,3 +10,7 @@ services:
 
 volumes:
   qdrant_storage:
+  # Named volumes the search container mounts so the bge model and pip
+  # downloads survive across runs instead of being re-fetched each time.
+  hf_cache:
+  pip_cache:
