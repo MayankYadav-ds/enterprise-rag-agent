@@ -105,6 +105,31 @@ because both containers share the `enterprise-rag-agent_default` network.
 
 The full run (compose up, wait for Qdrant, recreate, idempotent re-index, and smoke queries) is scripted in `scripts/index_in_docker.ps1` — run it from any folder, including the parent of the repo.
 
+## Search
+
+Dense-vector retrieval is implemented: `scripts/search.py` embeds a query with
+the same embedder that indexed the collection, asks Qdrant for the nearest
+neighbours, and prints one line per hit — rank, score, the citation
+(`[<file>, p. 22, <section_heading>]`) and a 120-character snippet:
+
+```bash
+python scripts/search.py "What risks did the company identify?" --top-k 5
+```
+
+Optional filters: `--doc-id` (one document), `--chunk-type` (`text` or
+`table`), `--min-score` (drop hits below a score), `--collection`, and
+`--qdrant-url`. The bge model needs torch, which Windows Application Control
+blocks on this machine, so the search runs inside the indexing container via
+`scripts/run_in_docker.ps1`:
+
+```bash
+.\scripts\run_in_docker.ps1 -Command "python scripts/search.py 'What risks?' --top-k 5"
+```
+
+BM25, reciprocal-rank fusion and a cross-encoder reranker arrive in later
+phases and implement the same `Retriever` protocol, so the search CLI is
+retriever-agnostic.
+
 ### torch and Windows Application Control
 
 The embedding model (BAAI/bge-small-en-v1.5) is backed by PyTorch, which this
@@ -148,7 +173,7 @@ No evaluation has been run yet; this repository will not publish placeholder sco
 
 ## Design decisions and trade-offs
 
-The project uses Qdrant for local vector storage and sentence-transformers for embeddings. Retrieval, answer generation, evaluation, and the API are built incrementally in later phases — see [docs/DECISIONS.md](docs/DECISIONS.md) for decisions and trade-offs.
+The project uses Qdrant for local vector storage and sentence-transformers for embeddings. Dense-vector retrieval and page-level citations are implemented (Phase 5.1); answer generation, evaluation, and the API are built incrementally in later phases — see [docs/DECISIONS.md](docs/DECISIONS.md) for decisions and trade-offs.
 
 ## Project structure
 
@@ -157,7 +182,7 @@ src/rag_agent/        Application package
   ingestion/          PDF parsing and normalisation
   chunking/           Chunking strategies
   embeddings/         Embedding and vector indexing
-  retrieval/          (stub — Phase 5)
+  retrieval/          Dense retriever and citations (Phase 5.1)
   generation/         (stub — Phase 6)
   api/                (stub — Phase 7)
   evaluation/         (stub — Phase 8)
@@ -177,8 +202,10 @@ The current repository does not include OCR: image-only/scanned pages are warned
 These phases are not built yet. The packages named below contain only a stub
 docstring — nothing in them is implemented, imported, or installed.
 
-- **Phase 5 — Retrieval.** `src/rag_agent/retrieval/`: BM25 and dense-vector
-  retrieval with reciprocal-rank fusion and a cross-encoder reranker.
+- **Phase 5 — Retrieval.** `src/rag_agent/retrieval/`: dense-vector retrieval
+  and page-level citations are implemented (Phase 5.1). BM25, reciprocal-rank
+  fusion and a cross-encoder reranker arrive in later phases and implement the
+  same `Retriever` protocol.
 - **Phase 6 — Answer generation.** `src/rag_agent/generation/`: grounded answers
   streamed over Server-Sent Events with document and page citations.
 - **Phase 7 — HTTP API.** `src/rag_agent/api/`: `/ingest`, `/query`, and

@@ -11,6 +11,8 @@ flowchart LR
     I --> C[Chunking + metadata]
     C --> E[Embeddings]
     E --> Q[(Qdrant)]
+    Q --> R[Retrieval]
+    R --> A[Answer + citations]
 ```
 
 ## Ingestion
@@ -105,25 +107,40 @@ flowchart LR
 - The model silently truncates text beyond 512 WordPiece tokens, so chunk size
   was lowered from 512/50 to 400/39. See [`docs/TOKEN_LIMIT_REPORT.md`](TOKEN_LIMIT_REPORT.md).
 
+## Retrieval
+
+`src/rag_agent/retrieval/` implements dense-vector retrieval (Phase 5.1).
+`DenseRetriever` embeds the query with the same embedder that indexed the
+collection, asks Qdrant for the nearest neighbours, and returns `RetrievedChunk`
+hits ranked 1..N best first. Every retriever implements the same `Retriever`
+protocol, so the search CLI and the citation layer are retriever-agnostic.
+
+A hit carries the fields a citation needs — source file, page range, section
+heading — plus the fields the answer generator needs: text, score, rank and
+which retriever produced it. Citations are formatted once, in
+`rag_agent.retrieval.citation`, as `[<file>, p. 22, <section_heading>]` (or
+`pp. 22-23` for a range), using the bare file name stored in the payload so a
+renamed source file is reflected without re-hydrating the chunk.
+
 ## Retrieval, generation, evaluation, API
 
-`src/rag_agent/retrieval/`, `src/rag_agent/generation/`,
-`src/rag_agent/evaluation/` and `src/rag_agent/api/` are stubs for later
-phases. Their `__init__.py` files carry a docstring and nothing else.
-Retrieval will combine BM25 and dense-vector retrieval with reciprocal-rank
-fusion and a cross-encoder reranker; generation will stream grounded answers
+`src/rag_agent/generation/`, `src/rag_agent/evaluation/` and
+`src/rag_agent/api/` are stubs for later phases. Their `__init__.py` files
+carry a docstring and nothing else. Generation will stream grounded answers
 over Server-Sent Events with document and page citations; evaluation will run
 RAGAS and retrieval metrics against a reproducible gold set. These phases are
 built incrementally and documented in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Roadmap (planned, not implemented)
 
-The packages above are stubs: their `__init__.py` files carry a docstring and
-nothing else, and nothing in them is imported or installed. The planned scope
-of each phase:
+The packages named below are stubs: their `__init__.py` files carry a docstring
+and nothing else, and nothing in them is imported or installed. The planned
+scope of each phase:
 
-- **Phase 5 — Retrieval** (`src/rag_agent/retrieval/`): BM25 and dense-vector
-  retrieval with reciprocal-rank fusion and a cross-encoder reranker.
+- **Phase 5 — Retrieval** (`src/rag_agent/retrieval/`): dense-vector retrieval
+  and page-level citations are implemented (Phase 5.1). BM25, reciprocal-rank
+  fusion and a cross-encoder reranker arrive in later phases and implement the
+  same `Retriever` protocol.
 - **Phase 6 — Answer generation** (`src/rag_agent/generation/`): grounded
   answers streamed over Server-Sent Events with document and page citations.
 - **Phase 7 — HTTP API** (`src/rag_agent/api/`): `/ingest`, `/query`, and

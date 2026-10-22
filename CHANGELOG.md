@@ -1,5 +1,36 @@
 # Changelog
 
+## [Phase 5.1: dense retrieval and citations] — in progress
+
+- **feat(retrieval):** `src/rag_agent/retrieval/` is no longer a stub.
+  `RetrievedChunk` is a frozen, slots-based dataclass carrying the fields a
+  citation needs (source file, page range, section heading) plus the fields
+  the answer generator needs (text, score, rank, retriever). `Retriever` is a
+  runtime-checkable Protocol whose `retrieve()` takes `query` position-only
+  and `top_k`/`doc_id`/`chunk_type`/`min_score` keyword-only, so a caller
+  cannot pass `min_score` in the `chunk_type` slot and silently filter by
+  chunk type instead of thresholding the score.
+- **feat(retrieval):** `DenseRetriever` embeds the query with the same
+  embedder that indexed the collection, asks Qdrant for the nearest
+  neighbours, and returns hits ranked 1..N best first. `min_score` is applied
+  before ranking so a filtered hit leaves no hole in the ranks; `top_k` is
+  validated 1..100 (bool rejected) and the query must be non-empty. No default
+  score threshold is chosen — a value passed as `min_score` is an explicit
+  caller decision.
+- **feat(retrieval):** `format_citation` renders a hit as
+  `[<file>, p. 22, <section_heading>]` (or `pp. 22-23` for a range), using the
+  bare file name stored in the payload and dropping the heading entirely when
+  the chunk has none. `to_dict` serialises a hit for the future API response.
+- **feat(scripts):** `scripts/search.py` is a dense-search CLI — query,
+  `--top-k`, `--doc-id`, `--chunk-type`, `--min-score`, `--collection`,
+  `--qdrant-url`; prints rank, score, citation and a 120-character snippet.
+  Runs inside the indexing container via `scripts/run_in_docker.ps1` because
+  the bge model needs torch, which Windows Application Control blocks here.
+- **fix(docker):** `docker-compose.yml` now declares the `hf_cache` and
+  `pip_cache` named volumes that `run_in_docker.ps1` mounts, so the search
+  container's model and pip caches are created with the compose file's
+  driver settings instead of being re-created empty on every run.
+
 ## [Fix heading hierarchy] — PR #41
 
 Shipped by [PR #41](https://github.com/MayankYadav-ds/enterprise-rag-agent/pull/41).
