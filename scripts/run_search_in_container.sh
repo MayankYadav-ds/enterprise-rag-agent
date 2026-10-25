@@ -7,9 +7,19 @@
 # to the host so the caller sees progress instead of a single blob at the end.
 set -eu
 
-# "$@" is the command to run, e.g. "python scripts/search.py 'What risks?'"
-if [ "$#" -eq 0 ]; then
-    echo "usage: $0 <command...>" >&2
+# The search command is passed through the SEARCH_COMMAND environment variable
+# by run_in_docker.ps1, not as argv: a command like
+#   python scripts/search.py '...' --top-k 5 --queries-file ...
+# is a single shell string, and passing it as one argv element to bash would
+# make it $0, leaving "$@" empty. Passing it through SEARCH_COMMAND and
+# word-splitting with 'eval set --' lets 'exec "$@"' run it with correct argv.
+if [ -n "${SEARCH_COMMAND:-}" ]; then
+    eval set -- "$SEARCH_COMMAND"
+fi
+
+# "$@" is the command to run, e.g. python scripts/search.py '...' --top-k 5
+if [ "$#" -eq 0 ] && [ -z "${SEARCH_COMMAND:-}" ]; then
+    echo "usage: $0 <command...> or set SEARCH_COMMAND=<command>" >&2
     exit 2
 fi
 

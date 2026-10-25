@@ -10,7 +10,8 @@
     index, so the real model can load and search the live Qdrant collection.
 
     Steps: docker compose up -d, wait for Qdrant, then in the container:
-    bash scripts/run_search_in_container.sh "<command>"
+    bash scripts/run_search_in_container.sh (with the command passed through
+    the SEARCH_COMMAND environment variable).
 
     Everything is logged to .agent/search-run.log.
 
@@ -23,6 +24,7 @@
 
 .EXAMPLE
     .\scripts\run_in_docker.ps1 -Command "python scripts/search.py 'What risks?'"
+    .\scripts\run_in_docker.ps1 -Command "python scripts/search.py --queries-file /rag_agent/.agent/queries-live.txt --top-k 5"
 #>
 [CmdletBinding()]
 param(
@@ -96,11 +98,26 @@ if (-not $ready) {
 Write-Log "Qdrant ready on http://localhost:6333/collections"
 
 # 6. Run the command in the container.
+#
+# The command is a full shell string (e.g. "python scripts/search.py '...'"),
+# so it is passed to the container script through SEARCH_COMMAND rather than as
+# a single argv element: bash "$containerScript" "$Command" would hand the whole
+# string to $0, leaving "$@" empty. The container script reads SEARCH_COMMAND,
+# word-splits it with 'eval set --', and execs it, so argv is correct and the
+# model is loaded only once for the whole file.
 $network = "enterprise-rag-agent_default"
 $mountRepo = "${projectRoot}:/rag_agent"
 $containerScript = "/rag_agent/scripts/run_search_in_container.sh"
 
 Write-Log "===== CONTAINER SEARCH (command=$Command) ====="
+# Inside the container Qdrant is reached as http://qdrant:6333 (the compose
+# service name on the shared network), NOT http://localhost:6333, which is
+# unreachable from the container's own network namespace. search.py defaults
+# to localhost; inject the container-side URL unless the caller already set
+# --qdrant-url.
+if ($Command -notmatch "(--qdrant-url|-q)\s") {
+    $Command = "$Command --qdrant-url http://qdrant:6333"
+}
 $prev = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 docker run --rm `
@@ -109,7 +126,8 @@ docker run --rm `
     -v hf_cache:/root/.cache/huggingface `
     -v pip_cache:/root/.cache/pip `
     --workdir /rag_agent `
-    python:3.11-slim bash "$containerScript" "$Command" 2>&1 | ForEach-Object { Write-Log "docker: $_" }
+    -e SEARCH_COMMAND="$Command" `
+    python:3.11-slim bash "$containerScript" 2>&1 | ForEach-Object { Write-Log "docker: $_" }
 $dockerExit = $LASTEXITCODE
 $ErrorActionPreference = $prev
 if ($dockerExit -ne 0) {
