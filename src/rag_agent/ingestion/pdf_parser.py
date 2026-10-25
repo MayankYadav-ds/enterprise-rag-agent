@@ -378,11 +378,39 @@ def _extract_tables(plumber_page: pdfplumber.page.Page) -> tuple[list[str], str 
 
 
 def _is_usable_table(table: list[list[str | None]]) -> bool:
-    """Reject single-column prose regions that ruled-line detection mistakes for tables."""
+    """Determine whether a detected grid is a genuine table.
+
+    The original heuristic rejected single-column prose but accepted any grid
+    with at least two columns and a row containing two non-empty cells. That
+    permitted the spurious ``|  |`` artifact extracted from page 22 of the
+    N-able filing — a four-column grid in which three columns are entirely
+    empty.
+
+    The updated rule adds a column-richness safeguard: when a grid has more
+    than three columns, at least two of those columns must each carry more
+    than one non-empty cell. A grid whose content is really a single paragraph
+    wrapped across ruled columns — one column holding all the prose, the rest
+    empty or singletons — is treated as a layout artifact and discarded. The
+    original checks (multiple columns, a row with two values) are retained to
+    keep legitimate small tables — e.g. the two-column policy tables on page 59.
+    """
+    # Original conditions: a usable table spans multiple columns and has at
+    # least one row that fills two or more cells.
     has_multiple_columns = max((len(row) for row in table), default=0) >= 2
     has_row_with_multiple_values = any(
         sum(bool(cell and cell.strip()) for cell in row) >= 2 for row in table
     )
+    # Count columns that contain at least two non-empty cells. zip(*table)
+    # transposes rows -> columns; an empty grid has no columns. This
+    # differentiates genuine tables from spurious splits of a single paragraph.
+    columns_with_multiple_cells = sum(
+        sum(bool(cell and cell.strip()) for cell in column) >= 2
+        for column in zip(*table, strict=False)
+    )
+    # If the grid is wide (>3 columns) but fewer than two columns carry a
+    # meaningful amount of content, it is a layout artifact rather than a table.
+    if len(table[0]) > 3 and columns_with_multiple_cells < 2:
+        return False
     return has_multiple_columns and has_row_with_multiple_values
 
 

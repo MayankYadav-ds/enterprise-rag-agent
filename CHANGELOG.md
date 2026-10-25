@@ -1,5 +1,35 @@
 # Changelog
 
+## [Phase 3 — citation repair] — complete
+
+- **fix(ingestion):** `pdf_parser._is_usable_table` no longer accepts a spurious
+  table extracted from page 22 of the N-able annual report. pdfplumber's
+  ruled-line detector split a single paragraph into a 4-column grid whose
+  content was really one wrapped paragraph; the old heuristic accepted it
+  (2+ columns, a row with 2 non-empty cells), emitting a `|  |` Markdown
+  chunk that broke citation snippet verification. The new rule requires that a
+  grid wider than 3 columns has at least two columns each carrying more than
+  one non-empty cell. Only that one grid changes acceptance across both
+  indexed filings; legitimate tables (N-able p.69, NPS p.21/49/73) are
+  unaffected. Regression test added in `tests/test_pdf_parser.py`.
+- **fix(audit):** `.agent/validate_citations.py` now verifies snippets against
+  the same reading-ordered, cleaned page text the chunker produced (header
+  before body, multi-column aware), instead of pymupdf's default content-stream
+  order, which interleaves head and body. It also accepts a non-ITEM section
+  marker carried forward from an earlier page of the same document (e.g.
+  "Report of Independent Registered Public Accounting Firm"), instead of only
+  `ITEM NN.` headings. Verified citations went 35/40 -> 39/40 against the
+  existing search log. The remaining CHECK was the stale `|  |` snippet in
+  that log; it was not a code defect and was removed by re-indexing the
+  collection with the fixed parser. A fresh 8-query dense search against the
+  re-indexed collection validates **40/40** citations.
+- **fix(indexing):** the Qdrant `rag_chunks` collection was re-indexed with
+  `--recreate` using the current parser. The collection now holds 542 points
+  (242 N-able, 300 NPS); a second idempotent pass reports `0 upserted, 542
+  skipped unchanged, 0 payload updated, 0 stale deleted`. The page-22 `|  |`
+  artifact chunk is gone — page 22 now carries two plain-text chunks, neither
+  containing a pipe character.
+
 ## [Phase 5.1: dense retrieval and citations] — in progress
 
 - **feat(retrieval):** `src/rag_agent/retrieval/` is no longer a stub.
