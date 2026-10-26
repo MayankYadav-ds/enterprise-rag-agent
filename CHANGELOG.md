@@ -1,5 +1,38 @@
 # Changelog
 
+## [Phase 8 — evaluation] — in progress
+
+- **feat(evaluation):** implemented the evaluation framework in
+  `src/rag_agent/evaluation/` (`gold_set.py`, `metrics.py`, `runner.py`).
+  Metrics (`PrecisionAtK`, `RecallAtK`, `mean_reciprocal_rank`) are pure
+  functions over ranked hit lists; `run_evaluation` drives any `Retriever`
+  against a `GoldSet` and returns `EvaluationResult` with per-query and mean
+  scores.
+- **feat(gold-set):** created `data/eval/gold_set.json` with 20 questions
+  grounded in the N-able 2024 Annual Report and NPS 2013 10-K. Each query
+  pairs a natural-language question with 19 verified chunk IDs from the live
+  `rag_chunks` collection. Version: `b4b9bd873762`.
+- **feat(cli):** added `python -m rag_agent.evaluation.runner` CLI with
+  configurable K values, top-K, collection, Qdrant URL, fake embedder mode,
+  and JSON/text report output.
+- **fix(gold-set):** corrected `GOLD_SET_PATH` to resolve 4 levels up to the
+  repo root (was 3), and fixed the gold-set loader to accept a `path` parameter.
+- **test(evaluation):** 38 tests in `tests/test_evaluation.py` covering
+  metrics, gold-set loading, mocked retrieval, serialization, and CLI arg
+  parsing. All pass.
+- **docs(evaluation):** full write-up in `docs/EVALUATION.md` documenting
+  metric definitions, gold set format, how to run, baseline results, and
+  limitations. README updated with baseline summary.
+
+### Baseline results
+
+Dense retrieval (bge-small-en-v1.5) against 542-point Qdrant collection:
+
+| Metric | @1 | @3 | @5 | @10 | MRR |
+|---|---|---|---|---|---|
+| Recall | 0.100 | 0.250 | 0.300 | 0.525 | 0.220 |
+| Precision | 0.010 | 0.029 | 0.029 | 0.016 | — |
+
 ## [Phase 3 — citation repair] — complete
 
 - **fix(ingestion):** `pdf_parser._is_usable_table` no longer accepts a spurious

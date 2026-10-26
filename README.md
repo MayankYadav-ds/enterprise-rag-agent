@@ -169,7 +169,15 @@ curl -N -X POST http://localhost:8000/query \
 
 ## Evaluation
 
-No evaluation has been run yet; this repository will not publish placeholder scores. Phase 8 will add the gold set, reproducible commands, and an ablation table with measured results in [docs/EVALUATION.md](docs/EVALUATION.md).
+Retrieval quality is measured against a hand-annotated gold set of 20 questions
+paired with verified chunk IDs from the indexed documents. The evaluation
+framework (`src/rag_agent/evaluation/`) computes Recall@K, Precision@K, and MRR
+over a live Qdrant collection. Full documentation is in
+[docs/EVALUATION.md](docs/EVALUATION.md).
+
+Baseline: dense retrieval with bge-small-en-v1.5 achieves
+Recall@1=0.10, Recall@3=0.25, Recall@5=0.30, Recall@10=0.525, and MRR=0.220
+across 20 queries. BM25 and hybrid retrieval are planned for future phases.
 
 ## Design decisions and trade-offs
 
@@ -185,7 +193,7 @@ src/rag_agent/        Application package
   retrieval/          Dense retriever and citations (Phase 5.1)
   generation/         (stub — Phase 6)
   api/                (stub — Phase 7)
-  evaluation/         (stub — Phase 8)
+  evaluation/         Gold set, metrics, runner (Phase 8)
 tests/                 Unit and integration tests
 data/                  Legally usable source documents and provenance
 docs/                  Architecture, decisions, and evaluation records
@@ -210,9 +218,11 @@ docstring — nothing in them is implemented, imported, or installed.
   streamed over Server-Sent Events with document and page citations.
 - **Phase 7 — HTTP API.** `src/rag_agent/api/`: `/ingest`, `/query`, and
   `/health` endpoints (FastAPI, not yet a dependency).
-- **Phase 8 — Evaluation.** `src/rag_agent/evaluation/`: RAGAS and retrieval
-  metrics against a reproducible gold set, with an ablation table of measured
-  results in [docs/EVALUATION.md](docs/EVALUATION.md).
+- **Phase 8 — Evaluation.** `src/rag_agent/evaluation/`: a gold set of 20
+  verified questions with Recall@K, Precision@K, and MRR metrics is implemented.
+  RAGAS metrics and a full ablation table (dense vs. hybrid vs. hybrid+rerrank)
+  are pending. See [docs/EVALUATION.md](docs/EVALUATION.md) for baseline
+  results.
 - **Phase 9 — Dockerised demo.** A one-command demo (`docker compose up`)
   would need a `Dockerfile` that does not exist yet; today Qdrant is run via
   `docker-compose.yml` and indexing via the manual `docker run` commands in
