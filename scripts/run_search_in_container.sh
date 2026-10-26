@@ -23,5 +23,13 @@ if [ "$#" -eq 0 ] && [ -z "${SEARCH_COMMAND:-}" ]; then
     exit 2
 fi
 
-python -m pip install --quiet -e ".[embeddings]"
+# Install the embeddings extra (the bge model needs torch, which Windows
+# Application Control blocks on this machine). The install is skipped when
+# SKIP_EMBEDDINGS_INSTALL is set, so argument-handling tests can exercise the
+# script without downloading PyTorch or Sentence Transformers. A real container
+# run leaves the flag unset, so the install still happens.
+if [ -z "${SKIP_EMBEDDINGS_INSTALL:-}" ]; then
+    python -m pip install --quiet -e ".[embeddings]"
+fi
+
 exec "$@"
