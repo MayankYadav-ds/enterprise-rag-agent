@@ -20,6 +20,8 @@ from rag_agent.chunking.models import Chunk
 from rag_agent.embeddings.fake import FakeEmbedder
 from rag_agent.embeddings.store import QdrantStore
 from rag_agent.retrieval.dense import DenseRetriever
+from rag_agent.retrieval.hybrid import HybridRetriever
+from rag_agent.retrieval.reranker import CrossEncoderReranker
 
 # scripts/ is not a package; load search.py by path so the batch query path is
 # unit-tested the same way the single-query path is.
@@ -181,3 +183,94 @@ class TestRunQueries:
             min_score=0.0,
         )
         assert exit_code == 0
+
+
+class TestRerankerCLI:
+    def test_qdrant_url_environment_and_explicit_precedence(self, monkeypatch):
+        calls = []
+
+        class Store:
+            def __init__(self, **kwargs):
+                calls.append(kwargs)
+
+            def scroll_payloads(self):
+                return {}
+
+        monkeypatch.setattr(search, "QdrantStore", Store)
+        monkeypatch.setenv("QDRANT_URL", "http://configured.invalid:6333")
+        monkeypatch.setattr(sys, "argv", ["search.py", "query", "--strategy", "bm25"])
+        args = search._build_args()
+        search._build_retriever(args, FakeEmbedder(dimension=32))
+        assert calls[0]["url"] == "http://configured.invalid:6333"
+        args.qdrant_url = ":memory:"
+        search._build_retriever(args, FakeEmbedder(dimension=32))
+        assert calls[1]["url"] == ":memory:"
+
+    @pytest.mark.parametrize(
+        ("cli_model", "env_model", "expected"),
+        [
+            (None, None, "cross-encoder/ms-marco-MiniLM-L-6-v2"),
+            (None, "environment/model", "environment/model"),
+            ("explicit/model", "environment/model", "explicit/model"),
+            ("explicit/model", None, "explicit/model"),
+        ],
+    )
+    def test_model_precedence_and_lazy_construction(
+        self, monkeypatch, cli_model, env_model, expected
+    ):
+        monkeypatch.delenv("RERANKER_MODEL", raising=False)
+        if env_model is not None:
+            monkeypatch.setenv("RERANKER_MODEL", env_model)
+        monkeypatch.setenv("RERANKER_DEVICE", "cpu")
+        monkeypatch.setenv("RERANKER_BATCH_SIZE", "7")
+        argv = [
+            "search.py",
+            "query",
+            "--strategy",
+            "hybrid",
+            "--rerank",
+            "--top-k",
+            "10",
+            "--rerank-candidates",
+            "25",
+            "--qdrant-url",
+            ":memory:",
+            "--collection",
+            f"rerank_cli_{uuid.uuid4().hex}",
+        ]
+        if cli_model is not None:
+            argv.extend(["--rerank-model", cli_model])
+        monkeypatch.setattr(sys, "argv", argv)
+
+        def forbidden_load(self):
+            pytest.fail("Building a search retriever must not load the cross-encoder")
+
+        monkeypatch.setattr(CrossEncoderReranker, "_load_model", forbidden_load)
+        result = search._build_retriever(search._build_args(), FakeEmbedder(dimension=32))
+        assert isinstance(result, CrossEncoderReranker)
+        assert isinstance(result.base_retriever, HybridRetriever)
+        assert result.config.model_name == expected
+        assert result.config.top_k == 10
+        assert result.config.candidate_count == 25
+        assert result.config.batch_size == 7
+
+    def test_disabled_reranking_ignores_reranker_configuration(self, monkeypatch):
+        monkeypatch.setenv("RERANKER_TOP_K", "invalid")
+        monkeypatch.setenv("RERANKER_BATCH_SIZE", "invalid")
+        monkeypatch.setitem(sys.modules, "sentence_transformers", None)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "search.py",
+                "query",
+                "--strategy",
+                "hybrid",
+                "--qdrant-url",
+                ":memory:",
+                "--collection",
+                f"disabled_cli_{uuid.uuid4().hex}",
+            ],
+        )
+        result = search._build_retriever(search._build_args(), FakeEmbedder(dimension=32))
+        assert isinstance(result, HybridRetriever)

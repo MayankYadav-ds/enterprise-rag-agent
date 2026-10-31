@@ -49,11 +49,11 @@ class GoldSet:
         return frozenset()
 
 
-def _file_version() -> str:
+def _file_version(path: Path = GOLD_SET_PATH) -> str:
     """SHA-256 of the gold set file, so the runner records the exact version."""
-    if not GOLD_SET_PATH.is_file():
+    if not path.is_file():
         return "missing"
-    return hashlib.sha256(GOLD_SET_PATH.read_bytes()).hexdigest()[:12]
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
 
 
 def load_gold_set(path: Path = GOLD_SET_PATH) -> GoldSet:
@@ -72,7 +72,7 @@ def load_gold_set(path: Path = GOLD_SET_PATH) -> GoldSet:
         )
         for item in raw["queries"]
     )
-    return GoldSet(version=_file_version(), queries=queries)
+    return GoldSet(version=_file_version(path), queries=queries)
 
 
 def gold_set_to_dict(gold_set: GoldSet) -> dict:

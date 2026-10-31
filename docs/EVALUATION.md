@@ -1,5 +1,12 @@
 # Evaluation
 
+> **Historical-results notice:** The retained gold set has known relevance-label
+> and corpus-coverage limitations; IDs resolving successfully does not establish
+> answer relevance. Q13/Q17/Q19/Q20 require adjudication. No labels were changed
+> during finalization. Historical BM25/hybrid/reranker runs predate the correction
+> from raw IDF odds to `log(1 + odds)` and are not current-code benchmarks.
+> See [artifact provenance](../data/eval/README.md). No new live evaluation was run.
+
 ## Status
 
 The evaluation framework is implemented and the first baseline has been
@@ -30,7 +37,8 @@ The evaluation lives in `src/rag_agent/evaluation/`:
   without torch installed.
 - **Determinism.** The gold set version is the SHA-256 of
   `data/eval/gold_set.json` (truncated to 12 hex chars). The version string is
-  recorded in every report, so baselines are directly comparable.
+  recorded in every report, which identifies the labels; corpus, models, filters, and candidate depth
+  must also match for a controlled comparison.
 
 ### Metric definitions
 
@@ -52,8 +60,8 @@ Each query pairs a natural-language question with the **chunk IDs** (not just
 page numbers) that a human annotator verified relevant, plus a `note` citing
 the page. All 19 unique chunk IDs were verified against both
 `data/eval/all_chunks.json` (the chunk manifest) and the live Qdrant
-`rag_chunks` collection (542 points). Every ID resolves to text that actually
-answers the question.
+`rag_chunks` collection (542 points). ID existence was checked, but subsequent source review found semantic relevance
+issues; these labels must not be described as fully validated.
 
 The gold IDs are real index IDs, so evaluation is grounded in the actual
 index rather than synthetic expectations.
@@ -73,8 +81,8 @@ docker compose up -d
     --qdrant-url "http://localhost:6333" \
     --ks "1,3,5,10" \
     --top-k 10 \
-    --output data/eval/baseline_dense.json \
-    --text-output data/eval/baseline_dense.txt
+    --output data/eval/dense_new_run.json \
+    --text-output data/eval/dense_new_run.txt
 ```
 
 The command loads the gold set from `data/eval/gold_set.json`, queries each
@@ -114,7 +122,7 @@ collection `rag_chunks` (542 points).
 | Metric | @1 | @3 | @5 | @10 | Mean |
 |---|---|---|---|---|---|
 | **Recall** | 0.100 | 0.250 | 0.300 | 0.525 | — |
-| **Precision** | 0.010 | 0.029 | 0.029 | 0.016 | — |
+| **Precision** | 0.100 | 0.083 | 0.060 | 0.055 | — |
 | **MRR** | — | — | — | — | 0.220 |
 
 **Per-query highlights** (from `data/eval/baseline_dense.json`):
@@ -127,6 +135,84 @@ collection `rag_chunks` (542 points).
   moderately; questions about risk factor summaries and IP licensing performed
   poorly.
 
+### Multi-strategy comparison (2026-10-28)
+
+With the evaluation runner extended to support `--strategy dense|bm25|hybrid`,
+all three strategies were run against the same live `rag_chunks` collection
+(542 points) and the same 20-query gold set (`b4b9bd873762`), top-k 10,
+K values 1, 3, 5, 10. Results are saved separately from the historical
+baseline:
+
+| Report | Strategy | File |
+|---|---|---|
+| Dense (baseline) | bge-small-en-v1.5 | `data/eval/baseline_dense.json` |
+| Dense (latest) | bge-small-en-v1.5 | `data/eval/dense_latest.json` |
+| BM25 | pure-Python BM25 | `data/eval/bm25_latest.json` |
+| Hybrid RRF | dense + BM25 fusion | `data/eval/hybrid_latest.json` |
+
+#### Measured results
+
+| Strategy | R@1 | R@3 | R@5 | R@10 | P@1 | P@3 | P@5 | P@10 | MRR |
+|---|---|---|---|---|---|---|---|---|---|
+| Dense (baseline) | 0.100 | 0.250 | 0.300 | 0.525 | 0.100 | 0.083 | 0.060 | 0.055 | 0.220 |
+| Dense (latest) | 0.100 | 0.250 | 0.300 | 0.525 | 0.100 | 0.083 | 0.060 | 0.055 | 0.220 |
+| BM25 | 0.200 | 0.250 | 0.300 | 0.450 | 0.200 | 0.083 | 0.060 | 0.045 | 0.248 |
+| Hybrid RRF | 0.150 | 0.300 | 0.400 | 0.550 | 0.150 | 0.100 | 0.080 | 0.055 | 0.272 |
+
+**Key observations:**
+
+- **Dense is unchanged.** The latest dense run reproduces the historical
+  baseline exactly (Recall@10 0.525, MRR 0.220), confirming the collection
+  and gold set are stable.
+- **BM25 improves Recall@1 (0.10 → 0.20) and MRR (0.220 → 0.248)**, but
+  loses Recall@10 (0.525 → 0.450). BM25 is stronger at ranking the *first*
+  relevant hit but weaker at covering *all* relevant chunks in the top-10.
+- **Hybrid RRF is the best overall.** It lifts Recall@3, @5 and @10 above
+  both single strategies and achieves the highest MRR (0.272). The fusion
+  combines BM25's strong top-1 ranking with dense's broad coverage.
+- **Precision follows the same pattern** as recall: hybrid leads at @3 and
+  @5, BM25 leads at @1, dense leads at @10.
+
+#### Score semantics
+
+- **Dense** scores are cosine similarity in `[-1, 1]` (bge-small-en-v1.5).
+- **BM25** scores are unbounded BM25 contributions; they are **not**
+  comparable to cosine similarity and must not be thresholded with a dense
+  `min_score` value.
+- **Hybrid** scores are sums of RRF contributions: `k/(k+rank_dense) +
+  k/(k+rank_bm25)`, living in `(0, 2)`. They are rank-based fusion scores, not
+  similarities. When `min_score` is passed to a hybrid retriever it is
+  forwarded to each component *before* fusion, so it filters dense hits by
+  cosine similarity and BM25 hits by BM25 score independently.
+
+#### How to run
+
+```bash
+# Start Qdrant (Docker)
+docker compose up -d
+
+# Dense (default)
+python -m rag_agent.evaluation.runner \
+    --qdrant-url "http://localhost:6333" \
+    --strategy dense \
+    --top-k 10 --ks "1,3,5,10" \
+    --output data/eval/dense_latest.json
+
+# BM25
+python -m rag_agent.evaluation.runner \
+    --qdrant-url "http://localhost:6333" \
+    --strategy bm25 \
+    --top-k 10 --ks "1,3,5,10" \
+    --output data/eval/bm25_latest.json
+
+# Hybrid RRF
+python -m rag_agent.evaluation.runner \
+    --qdrant-url "http://localhost:6333" \
+    --strategy hybrid \
+    --top-k 10 --ks "1,3,5,10" \
+    --output data/eval/hybrid_latest.json
+```
+
 ### Reproducibility
 
 The baseline report (`data/eval/baseline_dense.json`) records:
@@ -137,17 +223,74 @@ The baseline report (`data/eval/baseline_dense.json`) records:
 - Per-query recalls, precisions, MRR, and retrieved vs. relevant IDs.
 
 Re-running the same command against the same collection and gold set produces
-identical results (dense retrieval is deterministic given the same query
-embedding and Qdrant index).
+comparable results only when model revisions, corpus, filters, and candidate
+depth are also fixed; approximate search and software versions can affect rankings.
+
+### Phase 5.4 reranking metadata
+
+New reports retain the existing metric fields and `dataset_version`, and record
+the actual `strategy`, `reranked` state, `rerank_model`, `rerank_candidates`, and
+final `top_k` in `retrieval_settings`. Enabled reranking also records its device,
+batch size, and score threshold. The gold-set version hashes the supplied file,
+including a custom `--gold-set` path.
+
+Both search and evaluation accept `--rerank-model`. Model names resolve when
+configuration is created: explicit argument, then `RERANKER_MODEL`, then
+`cross-encoder/ms-marco-MiniLM-L-6-v2`. Model loading remains deferred until
+reranking has candidates. Environment settings supply defaults; explicit
+configuration overrides take precedence.
+
+Historical reports are preserved. Missing strategy, model, candidate count, or
+reranking state is reported as unknown rather than inferred from current
+defaults. Disabled reranking records `null` model and candidate-count values.
+
+NaN, positive infinity, and negative infinity from the cross-encoder raise a
+`ValueError` identifying the affected chunk before filtering or ranking. Invalid
+scores are never converted into hits or returned as a partial ranking.
+
+For comparisons, retain the same gold set and final top-k and record candidate
+depth. Hybrid retrieval fetches the requested number of hits from each component
+before fusion: reranking 20 candidates uses component depth 20, while a top-10
+hybrid baseline uses depth 10. A difference between those runs includes the
+effect of the larger candidate pool.
+
+### Real reranking evaluation (2026-10-30)
+
+The cached `cross-encoder/ms-marco-MiniLM-L-6-v2` model was evaluated offline
+against gold set `b4b9bd873762` (20 queries) and the existing 542-point
+`rag_chunks` collection, using 20 hybrid candidates and final top-k 10. The
+fresh hybrid baseline reproduces the saved hybrid metrics. New reports record
+model revisions, corpus and gold-set hashes, library versions, and settings:
+
+- [Fresh hybrid baseline](../data/eval/hybrid_phase54_baseline.json)
+- [Reranked hybrid JSON](../data/eval/reranked_hybrid_latest.json)
+- Historical text copies are retained locally; JSON reports are the archived deliverables.
+
+| Metric | Hybrid baseline | Reranked hybrid | Difference |
+|---|---:|---:|---:|
+| Recall@1 | 0.150 | 0.125 | -0.025 |
+| Recall@3 | 0.300 | 0.375 | +0.075 |
+| Recall@5 | 0.400 | 0.425 | +0.025 |
+| Recall@10 | 0.550 | 0.625 | +0.075 |
+| Precision@1 | 0.150 | 0.150 | 0.000 |
+| Precision@3 | 0.100 | 0.133333 | +0.033333 |
+| Precision@5 | 0.080 | 0.090 | +0.010 |
+| Precision@10 | 0.055 | 0.065 | +0.010 |
+| MRR | 0.272222 | 0.291250 | +0.019028 |
+
+These differences include the change from component depth 10 to 20 and do not
+isolate reranking alone. Recall@1 decreased even though later-cutoff recall and
+MRR increased. The payload corpus fingerprint was unchanged before and after
+the run, and existing evaluation files and gold annotations were preserved.
 
 ## Limitations
 
-- **Small gold set.** 20 queries is sufficient for relative comparison between
-  retrievers but too small for strong statistical claims. A larger set (50–100
+- **Small gold set.** 20 queries provide only an exploratory comparison, especially
+  with unresolved label quality; they do not support strong statistical claims. A larger set (50–100
   queries) is planned.
 - **Single dense baseline.** Only bge-small-en-v1.5 dense retrieval is
   measured. Hybrid retrieval (BM25 + dense fusion) and cross-encoder reranking
-  are not yet implemented.
+  are implemented, but historical metrics predate the BM25 correction.
 - **No RAGAS metrics.** Answer generation (Phase 6) and its API (Phase 7) must
   land before faithfulness, answer relevancy, and context precision/recall can
   be computed.
@@ -160,6 +303,20 @@ embedding and Qdrant index).
 ## Future work
 
 - Expand the gold set to 50–100 queries across more documents.
-- Implement BM25 retrieval (Phase 5.2) and reciprocal-rank fusion (Phase 5.3).
-- Add cross-encoder reranking (Phase 5.4) and measure the improvement.
+- Re-evaluate implemented retrieval strategies only after labels and corpus coverage
+  are adjudicated; do not assume reranking improves quality.
 - Collect RAGAS metrics once answer generation is implemented.
+
+## Controlled historical comparison
+
+The preserved controlled reports use identical captured hybrid pools, depth 20
+for both components, final top-k 10, and the same gold set. Baseline MRR is
+0.314167 versus 0.291250 reranked; Recall@10 is 0.625 for both. This isolates
+reranking better than the earlier depth-10/depth-20 comparison, but retains the
+old BM25 formula and unresolved gold labels. It is not a validated quality claim.
+
+Always choose unused output paths: the runner currently overwrites a supplied
+report path. The simple CLI does not expose independent baseline component depth;
+controlled comparisons require an explicit candidate-pool setup rather than
+assuming `--top-k` and `--rerank-candidates` are equivalent. Saved controlled
+artifacts contain those pools; the custom capture script is not a shipped CLI.

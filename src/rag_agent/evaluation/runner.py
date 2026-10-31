@@ -15,6 +15,7 @@ comparable.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,7 +24,6 @@ from rag_agent.evaluation.gold_set import GOLD_SET_PATH, GoldQuery, GoldSet, loa
 from rag_agent.evaluation.metrics import PrecisionAtK, RecallAtK, mean_reciprocal_rank
 
 if TYPE_CHECKING:
-    from rag_agent.retrieval.dense import DenseRetriever
     from rag_agent.retrieval.protocol import Retriever
 
 
@@ -61,6 +61,8 @@ class EvaluationResult:
         mean_precision: Mean Precision@K across queries for each K.
         mean_mrr: Mean reciprocal rank averaged across all queries.
         per_query: One ``QueryResult`` per query, in gold-set order.
+        reranked: Whether cross-encoder reranking was applied, or ``None``
+            when historical results did not record this setting.
     """
 
     dataset_version: str
@@ -71,6 +73,7 @@ class EvaluationResult:
     mean_precision: dict[int, float]
     mean_mrr: float
     per_query: tuple[QueryResult, ...] = field(default_factory=tuple)
+    reranked: bool | None = None
 
 
 def _compute_retrieved_ids(hits: list, relevant: frozenset[str], ks: list[int]) -> list[str]:
@@ -97,12 +100,44 @@ def _coerce_gold_set(gold_set: GoldSet | list[dict]) -> GoldSet:
     )
 
 
+def _retrieval_strategy(retriever: Retriever, strategy: str | None) -> str:
+    """Identify built-in retrievers without guessing missing historical settings.
+
+    Custom retrievers may supply their strategy explicitly. For built-in
+    retrievers the actual implementation takes precedence over a conflicting
+    label, which is rejected rather than written into an inaccurate report.
+    """
+    from rag_agent.retrieval.bm25 import BM25Retriever
+    from rag_agent.retrieval.dense import DenseRetriever
+    from rag_agent.retrieval.hybrid import HybridRetriever
+    from rag_agent.retrieval.reranker import CrossEncoderReranker
+
+    while isinstance(retriever, CrossEncoderReranker):
+        retriever = retriever.base_retriever
+    for retriever_type, actual in (
+        (DenseRetriever, "dense"),
+        (BM25Retriever, "bm25"),
+        (HybridRetriever, "hybrid"),
+    ):
+        if isinstance(retriever, retriever_type):
+            if strategy is not None and strategy != actual:
+                raise ValueError(
+                    f"strategy {strategy!r} does not match actual retriever {actual!r}"
+                )
+            return actual
+    return strategy or "unknown"
+
+
 def run_evaluation(
     retriever: Retriever,
     gold_set: GoldSet | list[dict],
     *,
     ks: list[int] | None = None,
     top_k: int = 10,
+    strategy: str | None = None,
+    rerank: bool = False,
+    rerank_candidates: int = 20,
+    rerank_model: str | None = None,
     **retriever_kwargs: object,
 ) -> EvaluationResult:
     """Run a retriever over a gold set and compute retrieval metrics.
@@ -116,6 +151,17 @@ def run_evaluation(
             to ``[1, 3, 5, 10]``. Each K must be a positive int.
         top_k: How many hits to request from the retriever per query. Must be
             at least as large as the largest K in ``ks`` so every K is scored.
+        strategy: Retrieval strategy label for custom retrievers. Built-in
+            dense, BM25 and hybrid strategies are inferred and checked against
+            any explicit label. Unidentified custom retrievers record unknown.
+        rerank: If True, wrap ``retriever`` with ``CrossEncoderReranker`` so
+            candidates are re-scored by a cross-encoder before metrics are
+            computed. The reranker uses ``RerankerConfig.from_env()`` with
+            ``top_k=top_k`` and ``candidate_count=rerank_candidates``.
+        rerank_candidates: Number of candidates to fetch from the upstream
+            retriever before reranking. Only used when ``rerank=True``.
+        rerank_model: Explicit cross-encoder model name, taking precedence over
+            ``RERANKER_MODEL`` and the default. Only used when ``rerank=True``.
         **retriever_kwargs: Extra filters forwarded to ``retriever.retrieve``
             (e.g. ``doc_id``, ``chunk_type``, ``min_score``).
 
@@ -134,6 +180,25 @@ def run_evaluation(
     max_k = max(ks)
     if top_k < max_k:
         raise ValueError(f"top_k ({top_k}) must be >= max(ks) ({max_k}) so every K is scored")
+
+    from rag_agent.retrieval.reranker import (
+        CrossEncoderReranker,
+        RerankerConfig,
+        build_reranked_retriever,
+    )
+
+    actual_strategy = _retrieval_strategy(retriever, strategy)
+    if rerank:
+        if isinstance(retriever, CrossEncoderReranker):
+            raise ValueError("retriever is already reranked; pass rerank=False to evaluate it")
+        rerank_config = RerankerConfig.from_env(
+            top_k=top_k,
+            candidate_count=rerank_candidates,
+            model_name=rerank_model,
+        )
+        retriever = build_reranked_retriever(retriever, enable=True, config=rerank_config)
+    rerank_config = retriever.config if isinstance(retriever, CrossEncoderReranker) else None
+    actual_reranked = rerank_config is not None
 
     # Sort and de-duplicate K values for stable, readable reports.
     ks_sorted = sorted(set(ks))
@@ -189,7 +254,20 @@ def run_evaluation(
         mean_precision = {k: precision_sums[k] / n for k in ks_sorted}
         mean_mrr = mrr_sum / n
 
-    retrieval_settings: dict[str, object] = {"top_k": top_k, **dict(retriever_kwargs)}
+    retrieval_settings: dict[str, object] = {
+        **retriever_kwargs,
+        "strategy": actual_strategy,
+        "reranked": actual_reranked,
+        "rerank_model": rerank_config.model_name if rerank_config else None,
+        "rerank_candidates": rerank_config.candidate_count if rerank_config else None,
+        "top_k": top_k,
+    }
+    if rerank_config is not None:
+        retrieval_settings.update(
+            rerank_device=rerank_config.device,
+            rerank_batch_size=rerank_config.batch_size,
+            rerank_min_score=rerank_config.min_score,
+        )
     # Keep only JSON-serialisable settings (filter out live retriever objects).
     safe_settings = {
         key: value
@@ -206,6 +284,7 @@ def run_evaluation(
         mean_precision=mean_precision,
         mean_mrr=mean_mrr,
         per_query=tuple(per_query),
+        reranked=actual_reranked,
     )
 
 
@@ -219,6 +298,7 @@ def result_to_dict(result: EvaluationResult) -> dict:
         "mean_recall": dict(sorted(result.mean_recall.items())),
         "mean_precision": dict(sorted(result.mean_precision.items())),
         "mean_mrr": result.mean_mrr,
+        "reranked": result.reranked,
         "per_query": [
             {
                 "query": q.query,
@@ -238,6 +318,16 @@ def render_report(result: EvaluationResult) -> str:
     lines: list[str] = []
     lines.append(f"Evaluation — dataset version: {result.dataset_version}")
     lines.append(f"Queries: {result.num_queries}  |  K values: {list(result.ks)}")
+    settings = result.retrieval_settings
+    strategy = settings.get("strategy") or "unknown (not recorded)"
+    reranked = result.reranked if result.reranked is not None else "unknown (not recorded)"
+    lines.append(f"Strategy: {strategy}  |  reranked: {reranked}")
+    lines.append(f"Final top-k: {settings.get('top_k', 'unknown (not recorded)')}")
+    if result.reranked:
+        lines.append(
+            f"Cross-encoder: {settings.get('rerank_model') or 'unknown (not recorded)'}"
+            f"  |  candidates: {settings.get('rerank_candidates', 'unknown (not recorded)')}"
+        )
     lines.append("")
     lines.append("Mean metrics:")
     header = "  K"
@@ -298,23 +388,34 @@ def _parse_ks(value: str) -> list[int]:
     return ks
 
 
+DEFAULT_STRATEGY = "dense"
+STRATEGIES = ("dense", "bm25", "hybrid")
+
+
 def _build_retriever(
     embedder_dim: int,
     collection: str,
     qdrant_url: str | None,
     use_fake: bool,
-) -> DenseRetriever:
-    """Build a DenseRetriever with a real or fake embedder.
+    strategy: str = DEFAULT_STRATEGY,
+) -> Retriever:
+    """Build the retriever for the requested evaluation strategy.
 
     Imports are deferred so the module remains importable without the
     ``[embeddings]`` extra installed (used by unit tests with a fake embedder).
+
+    ``dense`` and ``hybrid`` need the embedder for scoring. ``bm25`` scores text
+    only and never calls the embedder, but the store still needs an embedder to
+    open the collection (the collection's vector dimension is checked on open).
     """
     from rag_agent.embeddings.fake import FakeEmbedder
     from rag_agent.embeddings.sentence_transformer import SentenceTransformerEmbedder
     from rag_agent.embeddings.store import QdrantStore
+    from rag_agent.retrieval.bm25 import BM25Retriever
     from rag_agent.retrieval.dense import DenseRetriever
+    from rag_agent.retrieval.hybrid import HybridRetriever
 
-    if use_fake:
+    if use_fake or strategy == "bm25":
         embedder = FakeEmbedder(dimension=embedder_dim)
     else:
         try:
@@ -324,9 +425,20 @@ def _build_retriever(
     store = QdrantStore(
         embedder=embedder,
         collection_name=collection,
-        url=qdrant_url or "http://localhost:6333",
+        url=qdrant_url or os.environ.get("QDRANT_URL") or "http://localhost:6333",
+        validate_dimension=strategy != "bm25",
     )
-    return DenseRetriever(embedder, store)
+    if strategy == "dense":
+        return DenseRetriever(embedder, store)
+    if strategy == "bm25":
+        return BM25Retriever(index=store.scroll_payloads())
+    if strategy == "hybrid":
+        # hybrid: fuse dense and BM25 rankings with RRF.
+        return HybridRetriever(
+            DenseRetriever(embedder, store),
+            BM25Retriever(index=store.scroll_payloads()),
+        )
+    raise ValueError(f"Unknown strategy {strategy!r}; expected one of {STRATEGIES!r}")
 
 
 def main() -> int:
@@ -371,6 +483,29 @@ def main() -> int:
         "--fake-embedder",
         action="store_true",
         help="Use a deterministic fake embedder instead of downloading the real model.",
+    )
+    parser.add_argument(
+        "--strategy",
+        default=DEFAULT_STRATEGY,
+        choices=STRATEGIES,
+        help="Retrieval strategy: dense (default), bm25, or hybrid (dense + BM25 RRF).",
+    )
+    parser.add_argument(
+        "--rerank",
+        action="store_true",
+        help="Enable cross-encoder reranking on top of the selected strategy.",
+    )
+    parser.add_argument(
+        "--rerank-candidates",
+        type=int,
+        default=20,
+        help="Number of candidates to fetch for reranking (default: 20).",
+    )
+    parser.add_argument(
+        "--rerank-model",
+        default=None,
+        help="Cross-encoder model name (default: RERANKER_MODEL environment variable, "
+        "or cross-encoder/ms-marco-MiniLM-L-6-v2).",
     )
     parser.add_argument(
         "--output",
@@ -418,15 +553,27 @@ def main() -> int:
         collection=args.collection,
         qdrant_url=args.qdrant_url,
         use_fake=args.fake_embedder,
+        strategy=args.strategy,
     )
     logging.info(
-        "Querying collection %r with top_k=%d, ks=%s",
+        "Querying collection %r with strategy=%s, top_k=%d, ks=%s, rerank=%s",
         args.collection,
+        args.strategy,
         args.top_k,
         ks,
+        args.rerank,
     )
 
-    result = run_evaluation(retriever, gold_set, ks=ks, top_k=args.top_k)
+    result = run_evaluation(
+        retriever,
+        gold_set,
+        ks=ks,
+        top_k=args.top_k,
+        strategy=args.strategy,
+        rerank=args.rerank,
+        rerank_candidates=args.rerank_candidates,
+        rerank_model=args.rerank_model,
+    )
     save_json_report(result, args.output)
     logging.info("JSON report written to %s", args.output)
     if args.text_output is not None:

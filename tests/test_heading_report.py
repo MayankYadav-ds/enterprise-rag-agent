@@ -21,7 +21,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts.heading_report import _chunk_payloads_from_pdf, report  # noqa: E402
 
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_report.pdf"
+FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "sample_report.pdf"
+
+
+@pytest.fixture(autouse=True)
+def isolate_report_output(tmp_path, monkeypatch):
+    """The report ingests into data/processed relative to the working directory."""
+    monkeypatch.chdir(tmp_path)
 
 
 def test_chunk_payloads_from_pdf_shapes_qdrant_payloads() -> None:
