@@ -1,0 +1,158 @@
+{
+  "format": "v1",
+  "description": "Retrieval evaluation gold set for the Enterprise RAG Agent. Each query pairs a question with the chunk IDs (from data/eval/all_chunks.json) that a human annotator judged relevant, grounded in the actual indexed documents. Relevant IDs were verified against the real chunk contents before annotation.",
+  "documents": [
+    {
+      "doc_id": "doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d",
+      "source_file": "n-able-2024-annual-financial-report.pdf"
+    },
+    {
+      "doc_id": "doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669",
+      "source_file": "nps-pharmaceuticals-2013-10k.pdf"
+    }
+  ],
+  "queries": [
+    {
+      "query": "What are the main risk factors discussed by N-able?",
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_8f92c965_d836bb8893394941",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_78e5d0b5_29c272657ab2246d"
+      ],
+      "note": "N-able ITEM 1A Risk Factors summary (p22) plus a specific risk factor discussion (p47)."
+    },
+    {
+      "query": "How does NPS earn royalties from Sensipar?",
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_2b42daea_afe908a8106a00ca",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_558ce821_87f0d4923257a3b2"
+      ],
+      "note": "NPS royalty payments on Sensipar/PTH from Kyowa Hakko Kirin and Amgen (p50, p60)."
+    },
+    {
+      "query": "What was N-able total revenue in 2024?",
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_bd4209c6_1e1b026cbc9dfe24"
+      ],
+      "note": "N-able reports total revenue of $116.5 million for Q4 2024 (p59)."
+    },
+    {
+      "query": "What cybersecurity framework does N-able maintain?",
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_d85f6bbf_e9d7f03c9cd37c3b"
+      ],
+      "note": "N-able ITEM 1C Cybersecurity describes the framework including COSO and ISO 27001 (p54)."
+    },
+    {
+      "query": "What licensing and collaboration revenue did NPS report?",
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_ec5814cd_3be42299584346a4"
+      ],
+      "note": "NPS reports revenues from product sales, royalties and milestones from licensees (p49)."
+    },
+    {
+      "query": "What are NPS principal products Gattex and Revestive?",
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_ec5814cd_3be42299584346a4"
+      ],
+      "note": "NPS revenue relates to product sales of Gattex launched in US in Feb 2013 and royalties; Revestive approved in EU (p49)."
+    },
+    {
+      "query": "What does Item 1A say about risk factors overview?",
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_8f92c965_d836bb8893394941"
+      ],
+      "note": "N-able ITEM 1A Risk Factors Summary of Risk Factors (p22)."
+    },
+    {
+      "query": "How does N-able define ARR and customer count?",
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_958f5a02_51716740c1039753"
+      ],
+      "note": "N-able reports 2,349 customers with ARR over $50,000 as of Dec 31 2024 (p60)."
+    },
+    {
+      "query": "What market risk does N-able disclose regarding foreign currency?",
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7823236d_2cbc6a6602e67c7c"
+      ],
+      "note": "N-able ITEM 7A market risk: changes in foreign currency exchange rates (p75)."
+    },
+    {
+      "query": "What dividend policy does N-able disclose?",
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_d9a1816a_41cb7ea8891da45f"
+      ],
+      "note": "N-able states it does not intend to pay dividends on common stock (p51)."
+    },
+    {
+      "query": "What intellectual property risks does NPS mention?",
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_3f42b226_80a5f9c32d62a5e0"
+      ],
+      "note": "NPS risk factor about collaborators licensing IP to research, develop or commercialize products (p37)."
+    },
+    {
+      "query": "What liquidity sources does NPS rely on?",
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_72e3ce38_d1a377d100895ddb"
+      ],
+      "note": "NPS principal sources of liquidity are cash, cash equivalents and marketable investment securities (p55)."
+    },
+    {
+      "query": "What accounting firm audits N-able financial statements?",
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_eed60f09_2a0071b5e2dde1c7"
+      ],
+      "note": "Report of Independent Registered Public Accounting Firm for N-able (p83)."
+    },
+    {
+      "query": "What stock-based compensation expense did N-able report?",
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_1aceb601_d92167f47b73784f"
+      ],
+      "note": "N-able reports stock-based compensation expense and employee count of 1,773 as of Dec 31 2024 (p61)."
+    },
+    {
+      "query": "What is NPS royalty agreement with Kyowa Hakko Kirin?",
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_2b42daea_afe908a8106a00ca"
+      ],
+      "note": "NPS entered into agreement with Kyowa Hakko Kirin in 1995, royalty advance with 9% discount, Amgen resumes paying royalties (p50)."
+    },
+    {
+      "query": "What acquisition did N-able complete for Adlumin?",
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_72b19e35_39972b9a5c7098ed"
+      ],
+      "note": "N-able completed acquisition of Adlumin, Inc. in connection with Form 8-K filing (p57)."
+    },
+    {
+      "query": "What contingent consideration did N-able record?",
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_4dab3784_4b77720b3efb12b9"
+      ],
+      "note": "N-able recognized $3.7 million gain on contingent consideration liability; fair value $3.7 million as of Dec 31 2024 (p122)."
+    },
+    {
+      "query": "What are NPS collaborators and licensees?",
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_fdb58bcf_473e2d1861891ccb"
+      ],
+      "note": "NPS has royalty-based agreements with Amgen, Janssen, GlaxoSmithKline and Kyowa Hakko Kirin (p11)."
+    },
+    {
+      "query": "What are NPS clinical trial phases for PTH?",
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_72771fe7_faa6ce0c3a9eaabf"
+      ],
+      "note": "NPS describes Phase 2 clinical studies for PTH in limited patient population (p16)."
+    },
+    {
+      "query": "What restructuring costs did N-able incur?",
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_f5dce725_6631d606a7398779"
+      ],
+      "note": "N-able discusses non-GAAP operating margin, restructuring costs and spin-off costs (p68)."
+    }
+  ]
+}

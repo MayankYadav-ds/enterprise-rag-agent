@@ -39,7 +39,8 @@ tokenizer = [
 ]
 embeddings = [
   "sentence-transformers>=4,<7",
-  "tokenizer",
+  "tokenizers>=0.20,<1",
+  "huggingface_hub>=0.24,<1",
 ]
 
 [project.urls]
