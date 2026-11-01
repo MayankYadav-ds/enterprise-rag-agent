@@ -6,7 +6,7 @@
 
 A retrieval foundation for an AI research assistant, with ranked document evidence and page-level citations.
 
-> **Project status:** Ingestion, chunking, Qdrant indexing, dense/BM25/hybrid retrieval, optional cross-encoder reranking, and retrieval evaluation are implemented. Answer generation, the HTTP API, and an end-to-end demo remain planned.
+> **Project status:** Ingestion, chunking, Qdrant indexing, dense/BM25/hybrid retrieval, optional cross-encoder reranking, and retrieval evaluation are implemented. Phase 6 adds evidence-constrained extractive answers through a configurable LLM provider. Free-form synthesis, streaming, the HTTP API, and an end-to-end demo remain planned.
 
 ## The problem
 
@@ -20,6 +20,7 @@ Long reports and technical manuals are difficult to search reliably. This projec
 - Search with dense vectors, pure-Python BM25, or hybrid reciprocal-rank fusion.
 - Optionally rerank candidates with a lazily loaded cross-encoder.
 - Return source/page citations and evaluate Recall@K, Precision@K, and MRR.
+- Generate validated, quoted answers with explicit uncertainty and conflicting-evidence responses.
 
 ## Architecture
 
@@ -33,6 +34,8 @@ flowchart LR
     R --> F[Hybrid RRF]
     F --> X[Optional cross-encoder]
     X --> H[Ranked evidence + citations]
+    H --> G[LLM evidence selection]
+    G --> V[Validate quotes and render cited answer]
 ```
 
 ## Tech stack
@@ -192,6 +195,32 @@ The command logs processed, skipped, failed, page, table, low-text-quality-page,
 
 The ingestion parser uses PyMuPDF for positioned text and typography, and pdfplumber for ruled tables. It normalises whitespace and hyphenated line breaks, records headings, removes frequent edge headers/footers and standalone printed page numbers, and logs image-only pages instead of silently pretending OCR succeeded. It also scores page text from 0 to 1; scores below 0.900 warn about extraction artifacts such as `(cid:N)` tokens, literal U+FFFD, or control characters.
 
+## Grounded answers (Phase 6)
+
+The generation component accepts any existing retriever or a list of
+`RetrievedChunk` objects. An LLM selects verbatim evidence, and the application
+validates the selections and renders source/page citations. Empty or insufficient
+evidence produces an explicit uncertainty response; reported conflicts show both
+accounts without choosing a winner. This is extractive generation, not free-form
+synthesis or a guarantee of semantic correctness.
+
+With an existing Ollama service and an already-installed model:
+
+```powershell
+$env:RAG_LLM_PROVIDER = 'ollama'
+$env:RAG_LLM_MODEL = '<your-already-installed-model-name>'
+$env:RAG_LLM_BASE_URL = 'http://localhost:11434'
+.venv\Scripts\python.exe scripts/search.py 'What risks are reported?' --strategy bm25 --top-k 5 --answer
+```
+
+This command uses the existing Qdrant collection. `--answer` also works with
+`--strategy hybrid --rerank` when the embedding/reranking models are available.
+No provider is called unless answer mode is enabled and valid evidence exists.
+For saved evidence without Qdrant, use `python -m rag_agent.generation --help`.
+See [docs/GENERATION.md](docs/GENERATION.md) for configuration, integration,
+error handling, grounding limits, and the saved-evidence format. No models or
+services are automatically downloaded or started by the generation component.
+
 ## API example
 
 The `/ingest`, `/query`, and `/health` endpoints arrive in Phase 7. The final query flow will look like:
@@ -222,7 +251,7 @@ and limitations. Fake model scores are used only in tests.
 
 ## Design decisions and trade-offs
 
-The project uses Qdrant for local vector storage and sentence-transformers for embeddings. Dense, BM25, hybrid retrieval, cross-encoder reranking, page-level citations, and retrieval evaluation are implemented; answer generation and the API remain planned — see [docs/DECISIONS.md](docs/DECISIONS.md) for decisions and trade-offs.
+The project uses Qdrant for local vector storage and sentence-transformers for embeddings. Dense, BM25, hybrid retrieval, cross-encoder reranking, page-level citations, and retrieval evaluation are implemented; evidence-constrained extractive generation is implemented, while free-form synthesis and the API remain planned — see [docs/DECISIONS.md](docs/DECISIONS.md) for decisions and trade-offs.
 
 ## Project structure
 
@@ -232,7 +261,7 @@ src/rag_agent/        Application package
   chunking/           Chunking strategies
   embeddings/         Embedding and vector indexing
   retrieval/          Dense, BM25, hybrid, reranking, citations
-  generation/         (stub — Phase 6)
+  generation/         Provider interface, evidence validation, cited answers
   api/                (stub — Phase 7)
   evaluation/         Gold set, retrieval metrics, runner
 tests/                 Unit and integration tests
@@ -248,10 +277,10 @@ The current repository does not include OCR: image-only/scanned pages are warned
 
 ## Roadmap (planned, not implemented)
 
-Retrieval through Phase 5.4 and retrieval metrics are implemented. Remaining work:
+Retrieval through Phase 5.4, retrieval metrics, and Phase 6 extractive generation are implemented. Remaining work:
 
-- **Phase 6 — Answer generation.** `src/rag_agent/generation/`: grounded answers
-  streamed over Server-Sent Events with document and page citations.
+- **Generation extensions.** Free-form synthesis and streaming/SSE remain deferred;
+  the current generator validates a complete structured response before rendering.
 - **Phase 7 — HTTP API.** `src/rag_agent/api/`: `/ingest`, `/query`, and
   `/health` endpoints (FastAPI, not yet a dependency).
 - **Generation evaluation.** RAGAS metrics and a larger human-adjudicated

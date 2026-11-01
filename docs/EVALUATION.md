@@ -11,7 +11,7 @@
 
 The evaluation framework is implemented and the first baseline has been
 measured against a live Qdrant collection. RAGAS generation metrics are
-pending (Phase 6 answer generation must land first).
+pending; Phase 6 extractive generation has offline contract tests but no real-model quality benchmark.
 
 ## Framework
 
@@ -291,11 +291,11 @@ the run, and existing evaluation files and gold annotations were preserved.
 - **Single dense baseline.** Only bge-small-en-v1.5 dense retrieval is
   measured. Hybrid retrieval (BM25 + dense fusion) and cross-encoder reranking
   are implemented, but historical metrics predate the BM25 correction.
-- **No RAGAS metrics.** Answer generation (Phase 6) and its API (Phase 7) must
-  land before faithfulness, answer relevancy, and context precision/recall can
-  be computed.
-- **No generation-side evaluation.** The gold set measures retrieval quality
-  only; whether the answer generator uses the right evidence is not yet tested.
+- **No RAGAS metrics.** Phase 6 extractive generation is implemented; real-model
+  faithfulness, relevance and conflict-detection quality have not been measured.
+- **No generation-quality benchmark.** The gold set measures retrieval quality
+  only. Mocked generation tests check quote/citation integrity and control flow;
+  they do not establish semantic correctness or real-model answer quality.
 - **Chunk-level relevance.** The gold set is annotated at chunk granularity.
   A query whose answer spans two adjacent chunks will only get credit for the
   one(s) were explicitly annotated.
@@ -305,7 +305,7 @@ the run, and existing evaluation files and gold annotations were preserved.
 - Expand the gold set to 50–100 queries across more documents.
 - Re-evaluate implemented retrieval strategies only after labels and corpus coverage
   are adjudicated; do not assume reranking improves quality.
-- Collect RAGAS metrics once answer generation is implemented.
+- Collect real-model generation-quality metrics after suitable human-adjudicated evidence is available.
 
 ## Controlled historical comparison
 
@@ -320,3 +320,13 @@ report path. The simple CLI does not expose independent baseline component depth
 controlled comparisons require an explicit candidate-pool setup rather than
 assuming `--top-k` and `--rerank-candidates` are equivalent. Saved controlled
 artifacts contain those pools; the custom capture script is not a shipped CLI.
+
+## Phase 6 offline validation
+
+The generation suite exercises sufficient, insufficient and conflicting evidence,
+strict response schemas, invented citations/quotes, malformed chunk metadata,
+context/output limits, provider failures, and CLI behavior. Integration tests use
+all four retrieval paths with synthetic fixtures, FakeEmbedder/FakeCrossEncoder,
+and mocked LLMs. Those tests are software-contract evidence, not quality scores.
+No existing evaluation artifact or canonical gold label is changed by Phase 6.
+See [GENERATION.md](GENERATION.md) for the implementation and its semantic limits.

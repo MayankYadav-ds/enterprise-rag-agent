@@ -3,7 +3,7 @@
 ## Overview
 
 The agent ingests public PDFs, chunks them, indexes the chunks, and retrieves
-evidence with page-level citations. Answer generation is planned.
+evidence with page-level citations. Phase 6 produces validated extractive answers.
 
 ```mermaid
 flowchart LR
@@ -13,7 +13,8 @@ flowchart LR
     E --> Q[(Qdrant)]
     Q --> R[Retrieval]
     R --> A[Ranked chunks + citations]
-    A -. planned .-> G[Answer generation]
+    A --> G[LLM evidence selection]
+    G --> V[Validate quotations and render citations]
 ```
 
 ## Ingestion
@@ -144,6 +145,16 @@ identify the strategy and reranker. Candidate depth must be controlled when
 comparing hybrid with reranked hybrid. Historical reports and label limitations
 are documented in [EVALUATION.md](EVALUATION.md).
 
-`src/rag_agent/generation/` and `src/rag_agent/api/` remain stubs. Grounded answer
-generation, an HTTP API, generation metrics, a complete demo, and production
-hardening are planned, not delivered by the retrieval pipeline.
+`src/rag_agent/generation/` now composes with `Retriever` through `AnswerPipeline`.
+`AnswerGenerator` consumes immutable retrieval results and an injected
+`LLMProvider`. Its Ollama adapter uses environment configuration and structured
+JSON, without additional dependencies. Evidence is bounded, quotations must be
+exact substrings of the referenced chunk, and citations come only from existing
+metadata. Invalid responses fail closed; insufficiency and conflicts are explicit
+result states. See [GENERATION.md](GENERATION.md) for guarantees and limitations.
+
+Only validated source excerpts and application-authored framing are displayed;
+free-form synthesis and streaming remain deferred. Semantic sufficiency and
+conflict recognition are model judgments, not guaranteed by citation validation.
+`src/rag_agent/api/` remains a stub. An HTTP API, generation-quality benchmarks,
+a complete demo, and production hardening remain planned.

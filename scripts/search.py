@@ -50,6 +50,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from rag_agent.embeddings.fake import FakeEmbedder
 from rag_agent.embeddings.sentence_transformer import SentenceTransformerEmbedder
 from rag_agent.embeddings.store import QdrantStore
+from rag_agent.generation import (
+    AnswerGenerator,
+    AnswerPipeline,
+    GenerationConfig,
+    GenerationError,
+    build_provider,
+)
 from rag_agent.retrieval.bm25 import BM25Retriever
 from rag_agent.retrieval.citation import format_citation
 from rag_agent.retrieval.dense import DenseRetriever
@@ -142,6 +149,11 @@ def _build_args() -> argparse.Namespace:
         "optionally reranked."
     )
     parser.add_argument("query", nargs="?", help="Natural-language query")
+    parser.add_argument(
+        "--answer",
+        action="store_true",
+        help="Generate an evidence-constrained answer using the configured LLM provider.",
+    )
     parser.add_argument(
         "--queries-file",
         type=Path,
@@ -255,6 +267,19 @@ def main() -> int:
         logger.error("Provide a query or --queries-file")
         return 1
 
+    generator = None
+    if args.answer:
+        try:
+            config = GenerationConfig.from_env()
+            generator = AnswerGenerator(
+                build_provider(config),
+                max_evidence_chars=config.max_evidence_chars,
+                max_chunks=config.max_chunks,
+            )
+        except ValueError:
+            logger.error("Invalid generation configuration; check RAG_LLM_* settings.")
+            return 2
+
     # Dense and hybrid need the embedder for scoring; BM25 scores text only and
     # never calls the embedder, but the store still needs one to open the
     # collection (the collection's vector dimension is checked on open), so a
@@ -269,6 +294,25 @@ def main() -> int:
         embedder = FakeEmbedder(dimension=32)
 
     retriever = _build_retriever(args, embedder)
+
+    if generator is not None:
+        pipeline = AnswerPipeline(retriever, generator)
+        for query in queries:
+            print(f"===== {query}")
+            try:
+                answer = pipeline.answer(
+                    query,
+                    top_k=args.top_k,
+                    doc_id=args.doc_id,
+                    chunk_type=args.chunk_type,
+                    min_score=args.min_score,
+                )
+            except (GenerationError, ValueError):
+                logger.error("Answer generation failed; check evidence and provider configuration.")
+                return 2
+            print(f"status={answer.status}")
+            print(answer.text)
+        return 0
 
     # The embedder and the store are constructed once, so the whole file shares
     # one model load and one connection. Each query prints its own header and

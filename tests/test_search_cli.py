@@ -10,6 +10,7 @@ covered by ``tests/test_dense.py``.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import uuid
 from pathlib import Path
@@ -34,6 +35,84 @@ _spec.loader.exec_module(search)
 
 _read_queries_file = search._read_queries_file
 run_queries = search.run_queries
+
+
+@pytest.mark.parametrize("status", ["answered", "insufficient_evidence", "conflicting_evidence"])
+def test_answer_cli_uses_existing_retriever(monkeypatch, capsys, status):
+    from rag_agent.retrieval.models import RetrievedChunk
+
+    hits = [
+        RetrievedChunk(
+            str(i),
+            "doc",
+            "report.pdf",
+            i,
+            i,
+            None,
+            None,
+            "text",
+            f"Revenue was {i} million.",
+            1.0,
+            i,
+            "bm25",
+        )
+        for i in [1, 2]
+    ]
+
+    class Retriever:
+        def retrieve(self, query, **kwargs):
+            assert kwargs["top_k"] == 5
+            return hits
+
+    class Provider:
+        def complete(self, messages, *, schema):
+            count = {"answered": 1, "insufficient_evidence": 0, "conflicting_evidence": 2}[status]
+            return json.dumps(
+                {
+                    "status": status,
+                    "selections": [
+                        {"evidence_id": f"E{i + 1}", "quote": hits[i].text} for i in range(count)
+                    ],
+                }
+            )
+
+    monkeypatch.setenv("RAG_LLM_MODEL", "mock")
+    monkeypatch.setattr(sys, "argv", ["search.py", "revenue", "--strategy", "bm25", "--answer"])
+    monkeypatch.setattr(search, "_build_retriever", lambda *args: Retriever())
+    monkeypatch.setattr(search, "build_provider", lambda config: Provider())
+    assert search.main() == 0
+    output = capsys.readouterr().out
+    assert f"status={status}" in output
+    if status == "answered":
+        assert "[report.pdf, p. 1]" in output
+    if status == "conflicting_evidence":
+        assert "cannot resolve" in output and "[report.pdf, p. 2]" in output
+
+
+def test_answer_cli_configuration_failure_precedes_retrieval(monkeypatch):
+    monkeypatch.delenv("RAG_LLM_MODEL", raising=False)
+    monkeypatch.setattr(sys, "argv", ["search.py", "question", "--answer"])
+    monkeypatch.setattr(
+        search, "_build_retriever", lambda *args: pytest.fail("No retrieval expected")
+    )
+    assert search.main() == 2
+
+
+def test_answer_cli_provider_failure_is_nonzero(monkeypatch):
+    from rag_agent.generation import ProviderError
+
+    class BrokenPipeline:
+        def __init__(self, *args):
+            pass
+
+        def answer(self, *args, **kwargs):
+            raise ProviderError("unavailable")
+
+    monkeypatch.setenv("RAG_LLM_MODEL", "mock")
+    monkeypatch.setattr(sys, "argv", ["search.py", "question", "--strategy", "bm25", "--answer"])
+    monkeypatch.setattr(search, "_build_retriever", lambda *args: object())
+    monkeypatch.setattr(search, "AnswerPipeline", BrokenPipeline)
+    assert search.main() == 2
 
 
 def _chunk(**overrides) -> Chunk:
