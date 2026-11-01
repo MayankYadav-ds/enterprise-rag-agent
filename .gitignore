@@ -22,6 +22,7 @@ build/
 # Data and local services
 data/raw/
 data/processed/
+data/managed_documents/
 qdrant_storage/
 
 # Notebooks and editors

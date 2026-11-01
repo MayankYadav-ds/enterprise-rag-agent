@@ -4,9 +4,9 @@
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A production-minded AI research assistant that answers questions across complex documents with page-level, grounded citations.
+A retrieval foundation for an AI research assistant, with ranked document evidence and page-level citations.
 
-> **Project status:** PDF ingestion is implemented. Retrieval, generation, evaluation, and the demo are built incrementally in documented phases.
+> **Project status:** Ingestion, chunking, Qdrant indexing, dense/BM25/hybrid retrieval, optional cross-encoder reranking, and retrieval evaluation are implemented. Phase 6 adds evidence-constrained extractive answers through a configurable LLM provider. Phases 7–9 add FastAPI, a React frontend, and managed PDF upload, inventory, recovery, and deletion. Free-form synthesis, streaming, and a packaged deployment remain planned.
 
 ## The problem
 
@@ -17,6 +17,12 @@ Long reports and technical manuals are difficult to search reliably. This projec
 - Parse PDFs while preserving page, heading, table, and source metadata.
 - Compare fixed-size, recursive, and structure-aware chunking strategies.
 - Index chunks into Qdrant with diff-based sync and payload patching.
+- Search with dense vectors, pure-Python BM25, or hybrid reciprocal-rank fusion.
+- Optionally rerank candidates with a lazily loaded cross-encoder.
+- Return source/page citations and evaluate Recall@K, Precision@K, and MRR.
+- Generate validated, quoted answers with explicit uncertainty and conflicting-evidence responses.
+- Explore answers and source evidence in a responsive React workspace.
+- Upload PDFs, track processing, and safely delete API-owned documents through the document library.
 
 ## Architecture
 
@@ -26,6 +32,12 @@ flowchart LR
     I --> C[Chunking + metadata]
     C --> E[Embeddings]
     E --> Q[(Qdrant)]
+    Q --> R[Dense + BM25 retrieval]
+    R --> F[Hybrid RRF]
+    F --> X[Optional cross-encoder]
+    X --> H[Ranked evidence + citations]
+    H --> G[LLM evidence selection]
+    G --> V[Validate quotes and render cited answer]
 ```
 
 ## Tech stack
@@ -60,14 +72,14 @@ python -m pip install -e ".[tokenizer]"
 `[embeddings]` adds `sentence-transformers` (and torch) on top of `[tokenizer]`,
 so the full indexing pipeline needs `.[embeddings]`.
 
-Copy `.env.example` to `.env` before configuring a model provider. Do not commit `.env` or API keys.
+Use `.env.example` as a configuration reference. Export settings into the process environment; these CLIs do not automatically load `.env`. Never commit API keys. Install `.[embeddings]` for dense/hybrid search or reranking. Initial model use may download weights; with cached models, set `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` to prohibit downloads.
 
 ## Indexing PDFs
 
 Indexing runs the ingest → chunk → embed → Qdrant pipeline in one command:
 
 ```bash
-python scripts/index_documents.py --input data/raw --strategy recursive --recreate
+python scripts/index_documents.py --input data/raw --strategy recursive
 ```
 
 Re-running the command is idempotent: chunks whose IDs already exist are skipped,
@@ -105,6 +117,59 @@ because both containers share the `enterprise-rag-agent_default` network.
 
 The full run (compose up, wait for Qdrant, recreate, idempotent re-index, and smoke queries) is scripted in `scripts/index_in_docker.ps1` — run it from any folder, including the parent of the repo.
 
+## Search
+
+Three retrieval strategies are implemented and share one CLI:
+`scripts/search.py` accepts `--strategy dense|bm25|hybrid` (dense is the
+default). Each strategy implements the same `Retriever` protocol, so the
+answer generator and citation layer are retriever-agnostic.
+
+Dense-vector retrieval embeds a query with the same embedder that indexed the
+collection, asks Qdrant for the nearest neighbours, and prints one line per hit
+— rank, score, the citation (`[<file>, p. 22, <section_heading>]`) and a
+120-character snippet:
+
+```bash
+python scripts/search.py "What risks did the company identify?" --top-k 5
+```
+
+Optional filters: `--doc-id` (one document), `--chunk-type` (`text` or
+`table`), `--min-score` (drop hits below a score), `--collection`, and
+`--qdrant-url`. The bge model needs torch, which Windows Application Control
+blocks on this machine, so dense and hybrid search run inside the indexing
+container via `scripts/run_in_docker.ps1`:
+
+```bash
+.\scripts\run_in_docker.ps1 -Command "python scripts/search.py 'What risks?' --top-k 5"
+```
+
+BM25 search does not need the embedder for scoring — it builds the
+BM25 index from the collection's payload dictionary — so it works on machines
+that block torch. Hybrid combines BM25 with dense retrieval and requires torch:
+
+```bash
+python scripts/search.py "What risks did the company identify?" --strategy bm25 --top-k 5
+python scripts/search.py "What risks did the company identify?" --strategy hybrid --top-k 5
+```
+
+Score semantics differ by strategy: dense scores are cosine similarity in
+`[-1, 1]`; BM25 scores are unbounded BM25 contributions; hybrid scores are sums
+of RRF contributions in `(0, 2)`. See [docs/EVALUATION.md](docs/EVALUATION.md).
+
+### Cross-encoder reranking
+
+```bash
+python scripts/search.py "What risks did the company identify?" \
+    --strategy hybrid --rerank --rerank-candidates 20 --top-k 5
+```
+
+The default model is `cross-encoder/ms-marco-MiniLM-L-6-v2` on CPU.
+`--rerank-model` overrides `RERANKER_MODEL`, then the built-in default.
+Reranking loads the model only when candidates exist, scores query/chunk pairs
+in batches, preserves citation metadata, and rejects non-finite scores.
+Use `RERANKER_DEVICE` and `RERANKER_BATCH_SIZE` to configure execution.
+Cross-encoder scores are not calibrated probabilities or dense similarities.
+
 ### torch and Windows Application Control
 
 The embedding model (BAAI/bge-small-en-v1.5) is backed by PyTorch, which this
@@ -132,23 +197,72 @@ The command logs processed, skipped, failed, page, table, low-text-quality-page,
 
 The ingestion parser uses PyMuPDF for positioned text and typography, and pdfplumber for ruled tables. It normalises whitespace and hyphenated line breaks, records headings, removes frequent edge headers/footers and standalone printed page numbers, and logs image-only pages instead of silently pretending OCR succeeded. It also scores page text from 0 to 1; scores below 0.900 warn about extraction artifacts such as `(cid:N)` tokens, literal U+FFFD, or control characters.
 
+## Grounded answers (Phase 6)
+
+The generation component accepts any existing retriever or a list of
+`RetrievedChunk` objects. An LLM selects verbatim evidence, and the application
+validates the selections and renders source/page citations. Empty or insufficient
+evidence produces an explicit uncertainty response; reported conflicts show both
+accounts without choosing a winner. This is extractive generation, not free-form
+synthesis or a guarantee of semantic correctness.
+
+With an existing Ollama service and an already-installed model:
+
+```powershell
+$env:RAG_LLM_PROVIDER = 'ollama'
+$env:RAG_LLM_MODEL = '<your-already-installed-model-name>'
+$env:RAG_LLM_BASE_URL = 'http://localhost:11434'
+.venv\Scripts\python.exe scripts/search.py 'What risks are reported?' --strategy bm25 --top-k 5 --answer
+```
+
+This command uses the existing Qdrant collection. `--answer` also works with
+`--strategy hybrid --rerank` when the embedding/reranking models are available.
+No provider is called unless answer mode is enabled and valid evidence exists.
+For saved evidence without Qdrant, use `python -m rag_agent.generation --help`.
+See [docs/GENERATION.md](docs/GENERATION.md) for configuration, integration,
+error handling, grounding limits, and the saved-evidence format. No models or
+services are automatically downloaded or started by the generation component.
+
 ## API example
 
-The `/ingest`, `/query`, and `/health` endpoints arrive in Phase 7. The final query flow will look like:
+The backend provides `/health`, `/api/v1/retrieve`, `/api/v1/query`, and `/api/v1/documents`, plus Swagger at `/docs`. See [docs/API.md](docs/API.md) for installation, configuration, errors, and examples. Document management requires one API worker and an existing indexed collection; legacy CLI documents remain read-only through the API.
 
 ```bash
-curl -N -X POST http://localhost:8000/query \
+python -m pip install -e ".[api]"
+python -m uvicorn rag_agent.api.app:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+```bash
+curl -X POST http://localhost:8000/api/v1/query \
   -H "content-type: application/json" \
   -d '{"question":"What risks did the company identify?"}'
 ```
 
+## Frontend
+
+For the React, TypeScript, Vite, and Tailwind frontend, see [docs/FRONTEND.md](docs/FRONTEND.md). Start the backend above, then run `npm ci` and `npm run dev` from `frontend/`. The document screen supports uploads, processing status, inventory, and confirmed deletion. Live retrieval requires the configured models and Qdrant; grounded answers also require the configured generation provider.
+
 ## Evaluation
 
-No evaluation has been run yet; this repository will not publish placeholder scores. Phase 8 will add the gold set, reproducible commands, and an ablation table with measured results in [docs/EVALUATION.md](docs/EVALUATION.md).
+The evaluation framework supports all three retrieval strategies and optional
+reranking, with Recall@1/3/5/10, Precision@1/3/5/10, MRR, per-query rankings,
+and recorded strategy/model settings. See [docs/EVALUATION.md](docs/EVALUATION.md).
+
+The preserved 20-query gold set (`b4b9bd873762`) has known relevance-label and
+corpus-coverage limitations. Historical reports are retained for transparency,
+not presented as a validated benchmark of the current implementation. In
+particular, BM25's IDF formula was corrected after those runs; no new live
+quality evaluation has been performed for this revision.
+
+The historical controlled comparison used identical depth-20 hybrid candidate
+pools and final top-k 10: baseline MRR was 0.314167 versus 0.291250 with reranking;
+Recall@10 was 0.625 for both. This does not establish that reranking improves
+retrieval. See [data/eval/README.md](data/eval/README.md) for artifact provenance
+and limitations. Fake model scores are used only in tests.
 
 ## Design decisions and trade-offs
 
-The project uses Qdrant for local vector storage and sentence-transformers for embeddings. Retrieval, answer generation, evaluation, and the API are built incrementally in later phases — see [docs/DECISIONS.md](docs/DECISIONS.md) for decisions and trade-offs.
+The project uses Qdrant for local vector storage and sentence-transformers for embeddings. Dense, BM25, hybrid retrieval, cross-encoder reranking, page-level citations, and retrieval evaluation are implemented; evidence-constrained extractive generation is implemented, the FastAPI backend is implemented, while free-form synthesis remains planned — see [docs/DECISIONS.md](docs/DECISIONS.md) for decisions and trade-offs.
 
 ## Project structure
 
@@ -157,10 +271,11 @@ src/rag_agent/        Application package
   ingestion/          PDF parsing and normalisation
   chunking/           Chunking strategies
   embeddings/         Embedding and vector indexing
-  retrieval/          (stub — Phase 5)
-  generation/         (stub — Phase 6)
-  api/                (stub — Phase 7)
-  evaluation/         (stub — Phase 8)
+  retrieval/          Dense, BM25, hybrid, reranking, citations
+  generation/         Provider interface, evidence validation, cited answers
+  api/                FastAPI routes, schemas, lazy runtime, dependency injection
+  evaluation/         Gold set, retrieval metrics, runner
+frontend/              React workspace, document management, frontend tests
 tests/                 Unit and integration tests
 data/                  Legally usable source documents and provenance
 docs/                  Architecture, decisions, and evaluation records
@@ -174,19 +289,13 @@ The current repository does not include OCR: image-only/scanned pages are warned
 
 ## Roadmap (planned, not implemented)
 
-These phases are not built yet. The packages named below contain only a stub
-docstring — nothing in them is implemented, imported, or installed.
+Retrieval through Phase 5.4, retrieval metrics, Phase 6 extractive generation, Phase 7 FastAPI, Phase 8 frontend, and Phase 9 document management are implemented. Remaining work:
 
-- **Phase 5 — Retrieval.** `src/rag_agent/retrieval/`: BM25 and dense-vector
-  retrieval with reciprocal-rank fusion and a cross-encoder reranker.
-- **Phase 6 — Answer generation.** `src/rag_agent/generation/`: grounded answers
-  streamed over Server-Sent Events with document and page citations.
-- **Phase 7 — HTTP API.** `src/rag_agent/api/`: `/ingest`, `/query`, and
-  `/health` endpoints (FastAPI, not yet a dependency).
-- **Phase 8 — Evaluation.** `src/rag_agent/evaluation/`: RAGAS and retrieval
-  metrics against a reproducible gold set, with an ablation table of measured
-  results in [docs/EVALUATION.md](docs/EVALUATION.md).
-- **Phase 9 — Dockerised demo.** A one-command demo (`docker compose up`)
+- **Generation extensions.** Free-form synthesis and streaming/SSE remain deferred;
+  the current generator validates a complete structured response before rendering.
+- **Generation evaluation.** RAGAS metrics and a larger human-adjudicated
+  retrieval benchmark remain planned. Existing retrieval metrics are implemented.
+- **Packaged deployment.** A one-command demo (`docker compose up`)
   would need a `Dockerfile` that does not exist yet; today Qdrant is run via
   `docker-compose.yml` and indexing via the manual `docker run` commands in
   [Docker (recommended)](#docker-recommended).

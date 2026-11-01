@@ -1,5 +1,99 @@
 # Changelog
 
+## [Phase 8 — evaluation] — in progress
+
+- **feat(evaluation):** implemented the evaluation framework in
+  `src/rag_agent/evaluation/` (`gold_set.py`, `metrics.py`, `runner.py`).
+  Metrics (`PrecisionAtK`, `RecallAtK`, `mean_reciprocal_rank`) are pure
+  functions over ranked hit lists; `run_evaluation` drives any `Retriever`
+  against a `GoldSet` and returns `EvaluationResult` with per-query and mean
+  scores.
+- **feat(gold-set):** created `data/eval/gold_set.json` with 20 questions
+  grounded in the N-able 2024 Annual Report and NPS 2013 10-K. Each query
+  pairs a natural-language question with 19 verified chunk IDs from the live
+  `rag_chunks` collection. Version: `b4b9bd873762`.
+- **feat(cli):** added `python -m rag_agent.evaluation.runner` CLI with
+  configurable K values, top-K, collection, Qdrant URL, fake embedder mode,
+  and JSON/text report output.
+- **fix(gold-set):** corrected `GOLD_SET_PATH` to resolve 4 levels up to the
+  repo root (was 3), and fixed the gold-set loader to accept a `path` parameter.
+- **test(evaluation):** 38 tests in `tests/test_evaluation.py` covering
+  metrics, gold-set loading, mocked retrieval, serialization, and CLI arg
+  parsing. All pass.
+- **docs(evaluation):** full write-up in `docs/EVALUATION.md` documenting
+  metric definitions, gold set format, how to run, baseline results, and
+  limitations. README updated with baseline summary.
+
+### Baseline results
+
+Dense retrieval (bge-small-en-v1.5) against 542-point Qdrant collection:
+
+| Metric | @1 | @3 | @5 | @10 | MRR |
+|---|---|---|---|---|---|
+| Recall | 0.100 | 0.250 | 0.300 | 0.525 | 0.220 |
+| Precision | 0.010 | 0.029 | 0.029 | 0.016 | — |
+
+## [Phase 3 — citation repair] — complete
+
+- **fix(ingestion):** `pdf_parser._is_usable_table` no longer accepts a spurious
+  table extracted from page 22 of the N-able annual report. pdfplumber's
+  ruled-line detector split a single paragraph into a 4-column grid whose
+  content was really one wrapped paragraph; the old heuristic accepted it
+  (2+ columns, a row with 2 non-empty cells), emitting a `|  |` Markdown
+  chunk that broke citation snippet verification. The new rule requires that a
+  grid wider than 3 columns has at least two columns each carrying more than
+  one non-empty cell. Only that one grid changes acceptance across both
+  indexed filings; legitimate tables (N-able p.69, NPS p.21/49/73) are
+  unaffected. Regression test added in `tests/test_pdf_parser.py`.
+- **fix(audit):** `.agent/validate_citations.py` now verifies snippets against
+  the same reading-ordered, cleaned page text the chunker produced (header
+  before body, multi-column aware), instead of pymupdf's default content-stream
+  order, which interleaves head and body. It also accepts a non-ITEM section
+  marker carried forward from an earlier page of the same document (e.g.
+  "Report of Independent Registered Public Accounting Firm"), instead of only
+  `ITEM NN.` headings. Verified citations went 35/40 -> 39/40 against the
+  existing search log. The remaining CHECK was the stale `|  |` snippet in
+  that log; it was not a code defect and was removed by re-indexing the
+  collection with the fixed parser. A fresh 8-query dense search against the
+  re-indexed collection validates **40/40** citations.
+- **fix(indexing):** the Qdrant `rag_chunks` collection was re-indexed with
+  `--recreate` using the current parser. The collection now holds 542 points
+  (242 N-able, 300 NPS); a second idempotent pass reports `0 upserted, 542
+  skipped unchanged, 0 payload updated, 0 stale deleted`. The page-22 `|  |`
+  artifact chunk is gone — page 22 now carries two plain-text chunks, neither
+  containing a pipe character.
+
+## [Phase 5.1: dense retrieval and citations] — in progress
+
+- **feat(retrieval):** `src/rag_agent/retrieval/` is no longer a stub.
+  `RetrievedChunk` is a frozen, slots-based dataclass carrying the fields a
+  citation needs (source file, page range, section heading) plus the fields
+  the answer generator needs (text, score, rank, retriever). `Retriever` is a
+  runtime-checkable Protocol whose `retrieve()` takes `query` position-only
+  and `top_k`/`doc_id`/`chunk_type`/`min_score` keyword-only, so a caller
+  cannot pass `min_score` in the `chunk_type` slot and silently filter by
+  chunk type instead of thresholding the score.
+- **feat(retrieval):** `DenseRetriever` embeds the query with the same
+  embedder that indexed the collection, asks Qdrant for the nearest
+  neighbours, and returns hits ranked 1..N best first. `min_score` is applied
+  before ranking so a filtered hit leaves no hole in the ranks; `top_k` is
+  validated 1..100 (bool rejected) and the query must be non-empty. No default
+  score threshold is chosen — a value passed as `min_score` is an explicit
+  caller decision.
+- **feat(retrieval):** `format_citation` renders a hit as
+  `[<file>, p. 22, <section_heading>]` (or `pp. 22-23` for a range), using the
+  bare file name stored in the payload and dropping the heading entirely when
+  the chunk has none. `to_dict` serialises a hit for the future API response.
+- **feat(scripts):** `scripts/search.py` is a dense-search CLI — query,
+  `--top-k`, `--doc-id`, `--chunk-type`, `--min-score`, `--collection`,
+  `--qdrant-url`; prints rank, score, citation and a 120-character snippet.
+  Runs inside the indexing container via `scripts/run_in_docker.ps1` because
+  the bge model needs torch, which Windows Application Control blocks here.
+- **fix(docker):** `docker-compose.yml` now declares the `hf_cache` and
+  `pip_cache` named volumes that `run_in_docker.ps1` mounts, so the search
+  container's model and pip caches are created with the compose file's
+  driver settings instead of being re-created empty on every run.
+
 ## [Fix heading hierarchy] — PR #41
 
 Shipped by [PR #41](https://github.com/MayankYadav-ds/enterprise-rag-agent/pull/41).

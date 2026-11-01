@@ -2,8 +2,8 @@
 
 ## Overview
 
-The agent ingests public PDFs, chunks them, indexes the chunks, and answers
-questions over the indexed evidence with page-level citations.
+The agent ingests public PDFs, chunks them, indexes the chunks, and retrieves
+evidence with page-level citations. Phase 6 produces validated extractive answers.
 
 ```mermaid
 flowchart LR
@@ -11,6 +11,10 @@ flowchart LR
     I --> C[Chunking + metadata]
     C --> E[Embeddings]
     E --> Q[(Qdrant)]
+    Q --> R[Retrieval]
+    R --> A[Ranked chunks + citations]
+    A --> G[LLM evidence selection]
+    G --> V[Validate quotations and render citations]
 ```
 
 ## Ingestion
@@ -105,34 +109,97 @@ flowchart LR
 - The model silently truncates text beyond 512 WordPiece tokens, so chunk size
   was lowered from 512/50 to 400/39. See [`docs/TOKEN_LIMIT_REPORT.md`](TOKEN_LIMIT_REPORT.md).
 
-## Retrieval, generation, evaluation, API
+## Retrieval
 
-`src/rag_agent/retrieval/`, `src/rag_agent/generation/`,
-`src/rag_agent/evaluation/` and `src/rag_agent/api/` are stubs for later
-phases. Their `__init__.py` files carry a docstring and nothing else.
-Retrieval will combine BM25 and dense-vector retrieval with reciprocal-rank
-fusion and a cross-encoder reranker; generation will stream grounded answers
-over Server-Sent Events with document and page citations; evaluation will run
-RAGAS and retrieval metrics against a reproducible gold set. These phases are
-built incrementally and documented in [docs/DECISIONS.md](docs/DECISIONS.md).
+`src/rag_agent/retrieval/` implements dense, BM25, hybrid RRF, and optional cross-encoder reranking.
+`DenseRetriever` embeds the query with the same embedder that indexed the
+collection, asks Qdrant for the nearest neighbours, and returns `RetrievedChunk`
+hits ranked 1..N best first. Every retriever implements the same `Retriever`
+protocol, so the search CLI and the citation layer are retriever-agnostic.
 
-## Roadmap (planned, not implemented)
+A hit carries the fields a citation needs — source file, page range, section
+heading — plus the fields the answer generator needs: text, score, rank and
+which retriever produced it. Citations are formatted once, in
+`rag_agent.retrieval.citation`, as `[<file>, p. 22, <section_heading>]` (or
+`pp. 22-23` for a range), using the bare file name stored in the payload so a
+renamed source file is reflected without re-hydrating the chunk.
 
-The packages above are stubs: their `__init__.py` files carry a docstring and
-nothing else, and nothing in them is imported or installed. The planned scope
-of each phase:
+## Hybrid retrieval and reranking
 
-- **Phase 5 — Retrieval** (`src/rag_agent/retrieval/`): BM25 and dense-vector
-  retrieval with reciprocal-rank fusion and a cross-encoder reranker.
-- **Phase 6 — Answer generation** (`src/rag_agent/generation/`): grounded
-  answers streamed over Server-Sent Events with document and page citations.
-- **Phase 7 — HTTP API** (`src/rag_agent/api/`): `/ingest`, `/query`, and
-  `/health` endpoints.
-- **Phase 8 — Evaluation** (`src/rag_agent/evaluation/`): RAGAS and retrieval
-  metrics against a reproducible gold set; measured results go in
-  [docs/EVALUATION.md](EVALUATION.md).
-- **Phase 9 — Dockerised demo**: a one-command demo would need a `Dockerfile`
-  that does not exist yet. Today Qdrant runs via `docker-compose.yml` and
-  indexing runs via the manual `docker run` commands in the README.
-- **Phase 10 — Hardening**: authentication, rate limiting, production
-  deployment configuration.
+BM25 uses lowercase word tokens and log-smoothed inverse document frequency.
+Hybrid retrieval requests the same depth from dense and BM25, merges by chunk
+ID, and sums `k/(k+rank)` contributions (default k=60). This is standard RRF
+scaled by the constant k, preserving its ranking. A top-k request controls both
+component depth and final fused count.
+
+The cross-encoder wrapper requests a candidate pool from its base retriever,
+lazily scores query/chunk pairs, then returns final top-k hits with the original
+citation metadata. Model scores must be finite. Dense/hybrid require an
+embedding model; BM25 alone reads payloads without loading one.
+
+## Evaluation and remaining scope
+
+`src/rag_agent/evaluation/` implements gold-file versioning, Recall@K,
+Precision@K, MRR, per-query rankings, and JSON/text reports. Recorded settings
+identify the strategy and reranker. Candidate depth must be controlled when
+comparing hybrid with reranked hybrid. Historical reports and label limitations
+are documented in [EVALUATION.md](EVALUATION.md).
+
+`src/rag_agent/generation/` now composes with `Retriever` through `AnswerPipeline`.
+`AnswerGenerator` consumes immutable retrieval results and an injected
+`LLMProvider`. Its Ollama adapter uses environment configuration and structured
+JSON, without additional dependencies. Evidence is bounded, quotations must be
+exact substrings of the referenced chunk, and citations come only from existing
+metadata. Invalid responses fail closed; insufficiency and conflicts are explicit
+result states. See [GENERATION.md](GENERATION.md) for guarantees and limitations.
+
+Only validated source excerpts and application-authored framing are displayed;
+free-form synthesis and streaming remain deferred. Semantic sufficiency and
+conflict recognition are model judgments, not guaranteed by citation validation.
+
+## Phase 7: REST API
+
+`api.app.create_app()` constructs a FastAPI application without contacting
+external services or loading ML models. Typed schemas and thin synchronous routes
+call injected retrieval and generator dependencies. Blocking work runs in
+FastAPI's worker threads. The per-app runtime composes the existing dense, BM25,
+hybrid, and cross-encoder classes, then passes the same retrieved chunks to
+`AnswerGenerator`; it does not retrieve twice or implement another ranking algorithm.
+
+The runtime owns its Qdrant client and closes it on shutdown. The store's opt-in
+`create_if_missing=False` prevents collection creation/recreation during API
+initialization, with existing CLI behavior unchanged. Retrieval is serialized per
+worker to protect lazy model initialization and inference. API-managed mutations
+invalidate cached BM25/hybrid views. External indexing requires an API restart.
+Generation configuration is lazy and provider requests retain their timeout and
+response-size bounds. Each worker has independent caches.
+
+Health is liveness only. HTTP failures have sanitized error codes and request IDs;
+JSON request logs exclude questions, source text, raw exceptions, and credentials.
+Invalid generation output never becomes a successful answer. The API does not
+start services or supply authentication/rate limiting. See
+[API.md](API.md). Generation-quality benchmarks, a complete demo, and production
+hardening remain planned.
+
+## Phase 9: Managed document lifecycle
+
+`api.document_routes` streams and validates bounded raw PDF uploads, then registers
+their hash-derived identity. The original filename never selects a disk path.
+`api.documents.DocumentManager` persists state in SQLite; FastAPI background tasks
+run the existing `ingest_pdf` -> `chunk_document` -> `QdrantStore.sync` pipeline.
+No second parser, cleaner, chunker, or indexing algorithm is introduced. The runtime
+reuses the embedding instance, owns Qdrant access, and invalidates retrieval caches
+after every mutation attempt.
+
+The durable journal records ownership and indexing/deletion intent before vector
+writes. A single process serializes mutations and retrieval; a cross-thread file
+lock excludes other processes sharing the journal. Status reads do not wait for
+parsing. Failed writes are compensated by exact document-ID cleanup; unresolved
+cleanup fails retrieval closed. Restart or explicit recovery reconciles interrupted
+operations. This is not an atomic transaction across Qdrant and SQLite, and cannot
+coordinate nonparticipating CLI writers. Use one journal/API process per collection.
+
+Inventory combines managed records with existing Qdrant payloads. Legacy documents
+are read-only. Deletion touches owned PDF/parsed artifacts and document-specific
+vectors, retaining only a status tombstone. Generation already in flight retains
+its evidence snapshot. See [API.md](API.md) for settings and operational limits.

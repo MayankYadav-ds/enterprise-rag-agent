@@ -165,10 +165,42 @@ batch being all-or-nothing.
 **Payload patch convergence.** The patch pass compares each stored payload
 against the fresh one and patches only the differences. Qdrant's `upsert`
 keeps `null`-valued payload keys, but `set_payload` and `batch_update_points`
-drop them (verified on the live server). `_payload` therefore omits optional
-fields rather than storing them as `null`, and the comparison normalises `None`,
-a missing key and `""` as equal, so a point that never had a `subheading` key
-converges after one patch instead of being re-patched on every run.
+drop them (verified on the live server). `_payload` therefore **writes** every
+optional field, carrying `None` when it has no value, and the comparison
+normalises `None`, a missing key and `""` as equal, so a point that never had a
+`subheading` key converges after one patch instead of being re-patched on
+every run. Writing `None` (rather than omitting the key) is also what clears a
+stale value on the live server — only an explicit `null` removes a key from a
+patch, which cleared 41 points carrying `subheading: "PART I"` and 47 carrying
+the auditor's report title once the 10-K marker whitelist stopped leaking
+those values into the subheading field.
+
+## Dense retrieval and citations
+
+**Dense-only baseline.** `DenseRetriever` embeds the query with the same
+embedder that indexed the collection and asks Qdrant for the nearest
+neighbours, returning `RetrievedChunk` hits ranked 1..N best first. It is the
+baseline retriever: BM25, reciprocal-rank fusion and a cross-encoder reranker
+arrive in later phases and implement the same `Retriever` protocol, so the
+search CLI and the citation layer are retriever-agnostic. No default score
+threshold is chosen — a value passed as `min_score` is an explicit caller
+decision, not a silent filter.
+
+**Why no default threshold.** Cosine similarity on normalised bge vectors has
+no natural cut-off between "relevant" and "not relevant": two chunks sharing
+a heading score ~0.83 while an unrelated chunk scores ~0.72, and the gap
+shrinks as the collection grows. A fixed threshold would silently drop
+legitimate hits on some queries and keep noise on others, so the retriever
+returns everything the store ranks and lets the caller decide.
+
+**Citations use `section_heading`.** A citation is `[<file>, p. 22,
+<section_heading>]`, rendered from the chunk's stored metadata in one place
+(`rag_agent.retrieval.citation.format_citation`). It uses the bare file name
+(`Path(source_file).name`), so a renamed source file is reflected without
+re-hydrating the chunk, and the section heading is the third element, dropped
+entirely when the chunk has none — the bracket never contains an empty slot.
+The heading is taken from the payload rather than re-derived, so a hit is
+always traceable to exactly what was indexed.
 
 ## Quality threshold
 

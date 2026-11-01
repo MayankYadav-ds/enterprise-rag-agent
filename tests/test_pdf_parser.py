@@ -83,6 +83,38 @@ def test_parser_does_not_emit_single_column_prose_as_a_table() -> None:
     assert not _is_usable_table([["A paragraph inside a border."], ["Still prose."]])
 
 
+def test_parser_rejects_spurious_empty_column_artifact() -> None:
+    """Regression: ruled lines around a single block of prose must not leak as a table.
+
+    On page 22 of the N-able annual report, ruled lines bracketed a single
+    paragraph that pdfplumber split into a 4-column grid with only one
+    non-empty column. The old heuristic accepted such grids (they have multiple
+    columns and a row of multi-values after the paragraph wrapped), producing a
+    pipe artifact ``|  | ... |  |`` that broke citation snippet verification.
+    """
+    from rag_agent.ingestion.pdf_parser import _is_usable_table
+
+    # Faithful reproduction of the pdfplumber grid from N-able page 22: 4
+    # columns, but only the middle column ever carries content.
+    artifact = [
+        [None, "Below is a summary of the principal factors", None, None],
+        ["summary does not address all of the risks", None, None, None],
+        ["summary, and", None, "other", "risks that we face"],
+        ["considered, together with other information", None, None, None],
+        ["making an investment decision regarding our common stock.", None, None, None],
+    ]
+    assert not _is_usable_table(artifact)
+    # The legitimate two-column policy tables (e.g. N-able page 59) remain
+    # accepted even when they have a sparse layout.
+    assert _is_usable_table(
+        [
+            ["", "Policy text"],
+            ["First line of policy prose", ""],
+            ["Second line", "more prose"],
+        ]
+    )
+
+
 def test_clean_text_preserves_a_registered_sign() -> None:
     """Regression: the NPS trademark glyph is U+00AE, not U+FFFD."""
     text = "Sensipar®/Mimpara®"

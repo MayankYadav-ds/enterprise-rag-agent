@@ -361,3 +361,30 @@ not. N-able now has 0 chunks with a subheading, NPS keeps its 200.
 
 Phase 4 (embeddings + Qdrant) is complete and merged. Retrieval, answer
 generation, evaluation, and the demo arrive in later phases.
+
+## Phase 5.1 — dense retrieval and citations
+
+Phase 5.1 is implemented and unit-tested on this branch (`feat/retrieval-dense`).
+`src/rag_agent/retrieval/` is no longer a stub: `RetrievedChunk` is a frozen,
+slots-based dataclass; `Retriever` is a runtime-checkable Protocol; and
+`DenseRetriever` embeds the query with the same embedder that indexed the
+collection, asks Qdrant for the nearest neighbours, and returns hits ranked
+1..N best first. Citations are formatted once, in
+`rag_agent.retrieval.citation`, as `[<file>, p. 22, <section_heading>]`.
+
+Tests use a `FakeEmbedder` and an in-memory Qdrant collection, so the code path
+is covered without a model download. Measured locally on that fake collection:
+querying with the exact text of an indexed chunk returns it at rank 1 with a
+cosine score of 1.0; a three-chunk collection scores "the company earned one
+point two billion in revenue" at 1.0, "risk factors include competition and
+regulation" at 0.778 and "unrelated text about gardening and soil" at 0.667.
+`min_score` is applied before ranking, so a filtered hit leaves no hole in the
+ranks.
+
+**No live result has been obtained yet.** The real bge model needs torch,
+which Windows Application Control blocks on this machine (WinError 4551 on
+`torch/lib/c10.dll`), so the live search has not been run — only the unit
+tests, which exercise the exact code path `scripts/search.py` uses. The first
+live run will be done inside the indexing container via
+`scripts/run_in_docker.ps1`, and its output (right hits included) will be
+recorded here once it exists.

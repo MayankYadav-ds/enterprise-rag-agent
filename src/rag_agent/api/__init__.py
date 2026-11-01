@@ -1,5 +1,1 @@
-"""HTTP API components (stub — Phase 7).
-
-FastAPI endpoints for ingestion, query and health are planned here. Nothing
-in this package is implemented yet.
-"""
+"""REST API. Run rag_agent.api.app:create_app with Uvicorn factory mode."""

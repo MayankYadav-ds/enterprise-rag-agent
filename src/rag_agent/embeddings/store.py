@@ -64,7 +64,13 @@ def _client_for(location: str) -> QdrantClient:
 
 
 class QdrantStore:
-    """Wraps a Qdrant collection for chunk embeddings."""
+    """Wraps a Qdrant collection for chunk embeddings.
+
+    ``create_if_missing=False`` opens only existing collections, rejects
+    ``recreate=True``, and performs no initialization writes. This is not a
+    permission boundary for the store's explicit mutation methods. A supplied
+    ``client`` remains owned by the caller; existing CLI defaults are unchanged.
+    """
 
     def __init__(
         self,
@@ -72,15 +78,22 @@ class QdrantStore:
         collection_name: str = "rag_chunks",
         url: str = ":memory:",
         recreate: bool = False,
+        validate_dimension: bool = True,
+        *,
+        create_if_missing: bool = True,
+        client: QdrantClient | None = None,
     ) -> None:
         # ":memory:" selects Qdrant's local in-memory mode; any other value is
         # passed as a remote location (URL or host).
         self.embedder = embedder
         self.collection_name = collection_name
-        self._client = _client_for(url)
-        self._ensure_collection(recreate)
+        if not create_if_missing and recreate:
+            raise ValueError("recreate requires create_if_missing=True")
+        self._client = client if client is not None else _client_for(url)
+        self._create_if_missing = create_if_missing
+        self._ensure_collection(recreate, validate_dimension=validate_dimension)
 
-    def _ensure_collection(self, recreate: bool) -> None:
+    def _ensure_collection(self, recreate: bool, validate_dimension: bool = True) -> None:
         exists = self._client.collection_exists(self.collection_name)
         if exists and recreate:
             self._client.recreate_collection(
@@ -95,21 +108,24 @@ class QdrantStore:
         if exists:
             info = self._client.get_collection(self.collection_name)
             actual = info.config.params.vectors.size
-            if actual != self.embedder.dimension:
+            if validate_dimension and actual != self.embedder.dimension:
                 raise ValueError(
                     f"Collection {self.collection_name!r} has dimension "
                     f"{actual} but embedder produced {self.embedder.dimension}. "
                     "Use recreate=True to reset the collection."
                 )
-            existing_model = self._existing_model_name()
-            if existing_model is not None and existing_model != self.embedder.model_name:
-                raise ValueError(
-                    f"Collection {self.collection_name!r} was built with "
-                    f"embedding_model={existing_model!r} but this embedder is "
-                    f"{self.embedder.model_name!r}. Mixing vectors from different "
-                    "models is not supported. Use recreate=True to reset the collection."
-                )
+            if validate_dimension:
+                existing_model = self._existing_model_name()
+                if existing_model is not None and existing_model != self.embedder.model_name:
+                    raise ValueError(
+                        f"Collection {self.collection_name!r} was built with "
+                        f"embedding_model={existing_model!r} but this embedder is "
+                        f"{self.embedder.model_name!r}. Mixing vectors from different "
+                        "models is not supported. Use recreate=True to reset the collection."
+                    )
             return
+        if not self._create_if_missing:
+            raise ValueError("Required Qdrant collection does not exist")
         self._client.create_collection(
             self.collection_name,
             vectors_config=models.VectorParams(
@@ -343,6 +359,44 @@ class QdrantStore:
                 pid = _to_uuid(record.id)
                 if pid in wanted:
                     result[pid] = record.payload or {}
+            if next_offset is None:
+                break
+            offset = next_offset
+        return result
+
+    def scroll_payloads(self, doc_id: str | None = None) -> dict[str, dict]:
+        """Return ``{chunk_id: payload}`` for every point in the collection.
+
+        Optional ``doc_id`` filter returns only that document's points. Empty
+        vectors are requested so callers that only need the payload (e.g. the
+        BM25 retriever) never touch the embedding step.
+        """
+        result: dict[str, dict] = {}
+        offset = None
+        scroll_filter = None
+        if doc_id is not None:
+            scroll_filter = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="doc_id",
+                        match=models.MatchValue(value=doc_id),
+                    )
+                ]
+            )
+        while True:
+            records, next_offset = self._client.scroll(
+                self.collection_name,
+                scroll_filter=scroll_filter,
+                limit=100,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for record in records:
+                payload = record.payload or {}
+                chunk_id = payload.get("chunk_id")
+                if chunk_id is not None:
+                    result[str(chunk_id)] = payload
             if next_offset is None:
                 break
             offset = next_offset

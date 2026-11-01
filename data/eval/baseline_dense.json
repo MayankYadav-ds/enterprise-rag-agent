@@ -1,0 +1,650 @@
+{
+  "dataset_version": "b4b9bd873762",
+  "ks": [
+    1,
+    3,
+    5,
+    10
+  ],
+  "mean_mrr": 0.2196428571428571,
+  "mean_precision": {
+    "1": 0.1,
+    "3": 0.08333333333333333,
+    "5": 0.06,
+    "10": 0.05499999999999999
+  },
+  "mean_recall": {
+    "1": 0.1,
+    "3": 0.25,
+    "5": 0.3,
+    "10": 0.525
+  },
+  "num_queries": 20,
+  "per_query": [
+    {
+      "mrr": 0.16666666666666666,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.1,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What are the main risk factors discussed by N-able?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 0.5,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_78e5d0b5_29c272657ab2246d",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_8f92c965_d836bb8893394941"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_085a7d45_7994a20715afccea",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_9594a941_3caeb692832cb5f1",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_5fb92496_399349b3ff8fc822",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_2eb4e1e5_2c6f7156b4ee2c40",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7b2d76b1_f50b0af71428edfb",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_8f92c965_d836bb8893394941",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_c43dea33_c498f9bef5fd7f65",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_4d01d25f_cf04330fc398977d",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_4e2c5776_0c697f3c0709a6e1",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_e01ea111_cdea3e7d90382c40"
+      ]
+    },
+    {
+      "mrr": 0.0,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "How does NPS earn royalties from Sensipar?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_2b42daea_afe908a8106a00ca",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_558ce821_87f0d4923257a3b2"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_6e57dffb_24ce3306487961bc",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_ee610e06_2be0cd64c8f6abde",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_82aeb8f1_8f2a102591dcb2ac",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_18bdf924_2a96428f93ddee0f",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_1a8d8409_a0116bdd0a80e05c",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_50371f42_305aa1442d005c8c",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_fead4045_614cc76f6c2f1fda",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_b400e115_88c72f377aecd97c",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_79f2c175_6f9254395f78e031",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_91b6fabf_5f044a3fae3f2fcf"
+      ]
+    },
+    {
+      "mrr": 0.3333333333333333,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.1,
+        "3": 0.3333333333333333,
+        "5": 0.2
+      },
+      "query": "What was N-able total revenue in 2024?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 1.0,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_bd4209c6_1e1b026cbc9dfe24"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_5dd944c2_2b7eb2b6751bf4af",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_83f44311_d6f8d1d49367222a",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_bd4209c6_1e1b026cbc9dfe24",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_4bf4fd0a_886c3595c3ccb889",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_eed60f09_2a0071b5e2dde1c7",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_4dd59d10_479e3bf313e0ae72",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_958f5a02_51716740c1039753",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_431b33ce_7e264399d425e354",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_1fe78835_ac3ba53ed22640d3",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7b2d76b1_f50b0af71428edfb"
+      ]
+    },
+    {
+      "mrr": 0.25,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.1,
+        "3": 0.0,
+        "5": 0.2
+      },
+      "query": "What cybersecurity framework does N-able maintain?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 1.0,
+        "3": 0.0,
+        "5": 1.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_d85f6bbf_e9d7f03c9cd37c3b"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_9594a941_3caeb692832cb5f1",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7b2d76b1_f50b0af71428edfb",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_085a7d45_7994a20715afccea",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_d85f6bbf_e9d7f03c9cd37c3b",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_f5919850_a191b63e14156acd",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_461d1c3f_dcd88b323912a7ec",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_294c27e1_3a743b7b3c3d2433",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_a6910230_567f2264da0c5b30",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_727735f3_5a960bdc81685b43",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_77f47e2d_56b405c630ba5df6"
+      ]
+    },
+    {
+      "mrr": 0.0,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What licensing and collaboration revenue did NPS report?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_ec5814cd_3be42299584346a4"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_3a4df70c_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_facda084_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_03a2b0e9_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_4a9f86aa_778a6130d5c7c30c",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_bd4209c6_1e1b026cbc9dfe24",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_86cdf1cf_fa2e84c69bf89685",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_8852422c_506f5546df43b08c",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_89ea4719_ac7f5e5c7842100f",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_591592b5_c09b21b3ebea0f91",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_192564f3_bb3ee4515da11d97"
+      ]
+    },
+    {
+      "mrr": 0.0,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What are NPS principal products Gattex and Revestive?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_ec5814cd_3be42299584346a4"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_9ee05a60_6f16053ccd876dde",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_c265e333_76da0ea39fd2257c",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_56b01b6c_d9244992094fe5e1",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_b7cd1c04_1e612fe91578d6c2",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_240b6baa_421c6e3edf5e0186",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_c3c01841_620baf39d294d568",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_9426864c_0dd96df70e0a6b27",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_0a46221b_c90dcfdf481400bf",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_e7901ff2_f77715acb1e35eb4",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_2b263523_d4408444c3d8dd22"
+      ]
+    },
+    {
+      "mrr": 1.0,
+      "precision_at_k": {
+        "1": 1.0,
+        "10": 0.1,
+        "3": 0.3333333333333333,
+        "5": 0.2
+      },
+      "query": "What does Item 1A say about risk factors overview?",
+      "recall_at_k": {
+        "1": 1.0,
+        "10": 1.0,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_8f92c965_d836bb8893394941"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_8f92c965_d836bb8893394941",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_c43dea33_c498f9bef5fd7f65",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_e01ea111_cdea3e7d90382c40",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_d343f996_8ce9914730c47797",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_3f7c8a74_753d55d618556a9c",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_0a8dda08_ff6041eb10e017f2",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_085a7d45_7994a20715afccea",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_857139f3_097b71a6213072c7",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_12e23145_19beb78aa4a32c0d",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_2f15ebcc_ff4d4115e635c11d"
+      ]
+    },
+    {
+      "mrr": 0.5,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.1,
+        "3": 0.3333333333333333,
+        "5": 0.2
+      },
+      "query": "How does N-able define ARR and customer count?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 1.0,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_958f5a02_51716740c1039753"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_6a0d9a16_e846646e2561545a",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_958f5a02_51716740c1039753",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_085a7d45_7994a20715afccea",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7b2d76b1_f50b0af71428edfb",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_a9dcb043_f96669a620c46dcb",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_c9e2a3f1_3fe9685878dc6e56",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_6c516b9f_ecba1e004c07789d",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_a01d3b6d_cc7e6b05a5e55dfb",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_68e52930_05e025a6ea8a2172",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_9594a941_3caeb692832cb5f1"
+      ]
+    },
+    {
+      "mrr": 0.16666666666666666,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.1,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What market risk does N-able disclose regarding foreign currency?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 1.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7823236d_2cbc6a6602e67c7c"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_085a7d45_7994a20715afccea",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_1fe78835_ac3ba53ed22640d3",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_0eede09e_f81769a941bece42",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7b2d76b1_f50b0af71428edfb",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_1dcf60f3_761a8babf12845a4",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7823236d_2cbc6a6602e67c7c",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_4bf4fd0a_886c3595c3ccb889",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_2ac181fc_3413aff645d85e7e",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_0befdc1c_7f02c5a45b944da3",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_c0df7171_e6a6b962b08db370"
+      ]
+    },
+    {
+      "mrr": 0.0,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What dividend policy does N-able disclose?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_d9a1816a_41cb7ea8891da45f"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7b2d76b1_f50b0af71428edfb",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_085a7d45_7994a20715afccea",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_eed60f09_2a0071b5e2dde1c7",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_1fe78835_ac3ba53ed22640d3",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7fe22d55_e64c19ebf5a68543",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_2ac181fc_3413aff645d85e7e",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_1dcf60f3_761a8babf12845a4",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_294c27e1_3a743b7b3c3d2433",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_0c62db31_02fcb9bc446a9d5c",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_3a7c849c_e5af39daec210eb0"
+      ]
+    },
+    {
+      "mrr": 0.0,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What intellectual property risks does NPS mention?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_3f42b226_80a5f9c32d62a5e0"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_14025c57_29f9d409513b7e3f",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_192564f3_bb3ee4515da11d97",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_a6910230_567f2264da0c5b30",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_facda084_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_03a2b0e9_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_3a4df70c_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_4a9f86aa_778a6130d5c7c30c",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_b766fcf2_321dcad5a2894156",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_2de0f384_1978d0998b79ee42",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_f9ba6349_ed20574283a1ab29"
+      ]
+    },
+    {
+      "mrr": 0.14285714285714285,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.1,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What liquidity sources does NPS rely on?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 1.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_72e3ce38_d1a377d100895ddb"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_192564f3_bb3ee4515da11d97",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_8399a815_423473645d787ef0",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_8852422c_506f5546df43b08c",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_3a4df70c_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_facda084_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_03a2b0e9_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_72e3ce38_d1a377d100895ddb",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_1d419306_6a355cb10448a13e",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_89ea4719_ac7f5e5c7842100f",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_085a7d45_7994a20715afccea"
+      ]
+    },
+    {
+      "mrr": 1.0,
+      "precision_at_k": {
+        "1": 1.0,
+        "10": 0.1,
+        "3": 0.3333333333333333,
+        "5": 0.2
+      },
+      "query": "What accounting firm audits N-able financial statements?",
+      "recall_at_k": {
+        "1": 1.0,
+        "10": 1.0,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_eed60f09_2a0071b5e2dde1c7"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_eed60f09_2a0071b5e2dde1c7",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7b2d76b1_f50b0af71428edfb",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_085a7d45_7994a20715afccea",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_43827648_0b0de4f770b2fa89",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_31d952d4_a6057b7c371ec86d",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_5c5bd05a_04c35d317b9caa30",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_18418151_285c730d1a6b702a",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_8852422c_506f5546df43b08c",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_2ac181fc_3413aff645d85e7e",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_a01d3b6d_cc7e6b05a5e55dfb"
+      ]
+    },
+    {
+      "mrr": 0.0,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What stock-based compensation expense did N-able report?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_1aceb601_d92167f47b73784f"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_2f6c569a_2e2c4a0205405b14",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_f5dce725_6631d606a7398779",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_1fe78835_ac3ba53ed22640d3",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7fe22d55_e64c19ebf5a68543",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_eed60f09_2a0071b5e2dde1c7",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_085a7d45_7994a20715afccea",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7b2d76b1_f50b0af71428edfb",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_3a7c849c_e5af39daec210eb0",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_4bf4fd0a_886c3595c3ccb889",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_68e52930_05e025a6ea8a2172"
+      ]
+    },
+    {
+      "mrr": 0.16666666666666666,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.1,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What is NPS royalty agreement with Kyowa Hakko Kirin?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 1.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_2b42daea_afe908a8106a00ca"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_fba81a29_236e632b6f5e2ca0",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_cb4cc8f1_50213a61c4405a5e",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_fdb58bcf_473e2d1861891ccb",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_ee610e06_2be0cd64c8f6abde",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_394d5e71_2391bca8079531c5",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_2b42daea_afe908a8106a00ca",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_9f1b9f20_94122e1132e48154",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_88233f40_f163fe9f56847d3a",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_6a3f0a13_37ec5ea8890f01a3",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_9bf66fbb_0e54c54a8df5535e"
+      ]
+    },
+    {
+      "mrr": 0.16666666666666666,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.1,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What acquisition did N-able complete for Adlumin?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 1.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_72b19e35_39972b9a5c7098ed"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_edb256c1_adf547706149ef66",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_6c516b9f_ecba1e004c07789d",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_557b9eb2_f371b7239e38638a",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_a991599e_99386e03be05a8d4",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_87cc3b71_2ec0d1f5d1322ee9",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_72b19e35_39972b9a5c7098ed",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_83f44311_d6f8d1d49367222a",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7cfa136c_d5458d30f91dd8aa",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7b2d76b1_f50b0af71428edfb",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_68e52930_05e025a6ea8a2172"
+      ]
+    },
+    {
+      "mrr": 0.0,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What contingent consideration did N-able record?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_4dab3784_4b77720b3efb12b9"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_83f44311_d6f8d1d49367222a",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_085a7d45_7994a20715afccea",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_3a7c849c_e5af39daec210eb0",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_1fe78835_ac3ba53ed22640d3",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_eed60f09_2a0071b5e2dde1c7",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7b2d76b1_f50b0af71428edfb",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_ee68a0e4_bea4c6a63467f68f",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_68e52930_05e025a6ea8a2172",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_0a6fc079_187466d4d0f74085",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_0c62db31_02fcb9bc446a9d5c"
+      ]
+    },
+    {
+      "mrr": 0.0,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What are NPS collaborators and licensees?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_fdb58bcf_473e2d1861891ccb"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_facda084_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_03a2b0e9_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_3a4df70c_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_591592b5_c09b21b3ebea0f91",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_4a9f86aa_778a6130d5c7c30c",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_192564f3_bb3ee4515da11d97",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_89ea4719_ac7f5e5c7842100f",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_9ee05a60_6f16053ccd876dde",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_9f1b9f20_94122e1132e48154",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_6a3f0a13_37ec5ea8890f01a3"
+      ]
+    },
+    {
+      "mrr": 0.5,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.1,
+        "3": 0.3333333333333333,
+        "5": 0.2
+      },
+      "query": "What are NPS clinical trial phases for PTH?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 1.0,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_72771fe7_faa6ce0c3a9eaabf"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_9f1b9f20_94122e1132e48154",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_72771fe7_faa6ce0c3a9eaabf",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_88e3ecc9_31253ad68851de8f",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_0529f355_60219ada13360ed3",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_a283e001_ca60b4850a303b90",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_6a3f0a13_37ec5ea8890f01a3",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_3a4df70c_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_03a2b0e9_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_facda084_94241305ed3a4aae",
+        "chunk_doc_7ad99a6a1e620aa1db7988b662f4d23ae0dd1e0c178c9d5d4bfedb5c16f58669_88233f40_f163fe9f56847d3a"
+      ]
+    },
+    {
+      "mrr": 0.0,
+      "precision_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "query": "What restructuring costs did N-able incur?",
+      "recall_at_k": {
+        "1": 0.0,
+        "10": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "relevant_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_f5dce725_6631d606a7398779"
+      ],
+      "retrieved_chunk_ids": [
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_db08e1e1_6b48beb6f72eac2a",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_83f44311_d6f8d1d49367222a",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_68e52930_05e025a6ea8a2172",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_085a7d45_7994a20715afccea",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_1fe78835_ac3ba53ed22640d3",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_4bf4fd0a_886c3595c3ccb889",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7fe22d55_e64c19ebf5a68543",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_6db18034_fbac8ae731bceb54",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_7b2d76b1_f50b0af71428edfb",
+        "chunk_doc_95d29443a6f09b93a68bd6ecd857a7516313fef7ae3303709b5e700fa268448d_a50149b0_dbd3e7d74faa272b"
+      ]
+    }
+  ],
+  "retrieval_settings": {
+    "top_k": 10
+  }
+}
