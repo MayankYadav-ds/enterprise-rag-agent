@@ -156,5 +156,50 @@ result states. See [GENERATION.md](GENERATION.md) for guarantees and limitations
 Only validated source excerpts and application-authored framing are displayed;
 free-form synthesis and streaming remain deferred. Semantic sufficiency and
 conflict recognition are model judgments, not guaranteed by citation validation.
-`src/rag_agent/api/` remains a stub. An HTTP API, generation-quality benchmarks,
-a complete demo, and production hardening remain planned.
+
+## Phase 7: REST API
+
+`api.app.create_app()` constructs a FastAPI application without contacting
+external services or loading ML models. Typed schemas and thin synchronous routes
+call injected retrieval and generator dependencies. Blocking work runs in
+FastAPI's worker threads. The per-app runtime composes the existing dense, BM25,
+hybrid, and cross-encoder classes, then passes the same retrieved chunks to
+`AnswerGenerator`; it does not retrieve twice or implement another ranking algorithm.
+
+The runtime owns its Qdrant client and closes it on shutdown. The store's opt-in
+`create_if_missing=False` prevents collection creation/recreation during API
+initialization, with existing CLI behavior unchanged. Retrieval is serialized per
+worker to protect lazy model initialization and inference. API-managed mutations
+invalidate cached BM25/hybrid views. External indexing requires an API restart.
+Generation configuration is lazy and provider requests retain their timeout and
+response-size bounds. Each worker has independent caches.
+
+Health is liveness only. HTTP failures have sanitized error codes and request IDs;
+JSON request logs exclude questions, source text, raw exceptions, and credentials.
+Invalid generation output never becomes a successful answer. The API does not
+start services or supply authentication/rate limiting. See
+[API.md](API.md). Generation-quality benchmarks, a complete demo, and production
+hardening remain planned.
+
+## Phase 9: Managed document lifecycle
+
+`api.document_routes` streams and validates bounded raw PDF uploads, then registers
+their hash-derived identity. The original filename never selects a disk path.
+`api.documents.DocumentManager` persists state in SQLite; FastAPI background tasks
+run the existing `ingest_pdf` -> `chunk_document` -> `QdrantStore.sync` pipeline.
+No second parser, cleaner, chunker, or indexing algorithm is introduced. The runtime
+reuses the embedding instance, owns Qdrant access, and invalidates retrieval caches
+after every mutation attempt.
+
+The durable journal records ownership and indexing/deletion intent before vector
+writes. A single process serializes mutations and retrieval; a cross-thread file
+lock excludes other processes sharing the journal. Status reads do not wait for
+parsing. Failed writes are compensated by exact document-ID cleanup; unresolved
+cleanup fails retrieval closed. Restart or explicit recovery reconciles interrupted
+operations. This is not an atomic transaction across Qdrant and SQLite, and cannot
+coordinate nonparticipating CLI writers. Use one journal/API process per collection.
+
+Inventory combines managed records with existing Qdrant payloads. Legacy documents
+are read-only. Deletion touches owned PDF/parsed artifacts and document-specific
+vectors, retaining only a status tombstone. Generation already in flight retains
+its evidence snapshot. See [API.md](API.md) for settings and operational limits.

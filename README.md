@@ -6,7 +6,7 @@
 
 A retrieval foundation for an AI research assistant, with ranked document evidence and page-level citations.
 
-> **Project status:** Ingestion, chunking, Qdrant indexing, dense/BM25/hybrid retrieval, optional cross-encoder reranking, and retrieval evaluation are implemented. Phase 6 adds evidence-constrained extractive answers through a configurable LLM provider. Free-form synthesis, streaming, the HTTP API, and an end-to-end demo remain planned.
+> **Project status:** Ingestion, chunking, Qdrant indexing, dense/BM25/hybrid retrieval, optional cross-encoder reranking, and retrieval evaluation are implemented. Phase 6 adds evidence-constrained extractive answers through a configurable LLM provider. Phases 7–9 add FastAPI, a React frontend, and managed PDF upload, inventory, recovery, and deletion. Free-form synthesis, streaming, and a packaged deployment remain planned.
 
 ## The problem
 
@@ -21,6 +21,8 @@ Long reports and technical manuals are difficult to search reliably. This projec
 - Optionally rerank candidates with a lazily loaded cross-encoder.
 - Return source/page citations and evaluate Recall@K, Precision@K, and MRR.
 - Generate validated, quoted answers with explicit uncertainty and conflicting-evidence responses.
+- Explore answers and source evidence in a responsive React workspace.
+- Upload PDFs, track processing, and safely delete API-owned documents through the document library.
 
 ## Architecture
 
@@ -223,13 +225,22 @@ services are automatically downloaded or started by the generation component.
 
 ## API example
 
-The `/ingest`, `/query`, and `/health` endpoints arrive in Phase 7. The final query flow will look like:
+The backend provides `/health`, `/api/v1/retrieve`, `/api/v1/query`, and `/api/v1/documents`, plus Swagger at `/docs`. See [docs/API.md](docs/API.md) for installation, configuration, errors, and examples. Document management requires one API worker and an existing indexed collection; legacy CLI documents remain read-only through the API.
 
 ```bash
-curl -N -X POST http://localhost:8000/query \
+python -m pip install -e ".[api]"
+python -m uvicorn rag_agent.api.app:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+```bash
+curl -X POST http://localhost:8000/api/v1/query \
   -H "content-type: application/json" \
   -d '{"question":"What risks did the company identify?"}'
 ```
+
+## Frontend
+
+For the React, TypeScript, Vite, and Tailwind frontend, see [docs/FRONTEND.md](docs/FRONTEND.md). Start the backend above, then run `npm ci` and `npm run dev` from `frontend/`. The document screen supports uploads, processing status, inventory, and confirmed deletion. Live retrieval requires the configured models and Qdrant; grounded answers also require the configured generation provider.
 
 ## Evaluation
 
@@ -251,7 +262,7 @@ and limitations. Fake model scores are used only in tests.
 
 ## Design decisions and trade-offs
 
-The project uses Qdrant for local vector storage and sentence-transformers for embeddings. Dense, BM25, hybrid retrieval, cross-encoder reranking, page-level citations, and retrieval evaluation are implemented; evidence-constrained extractive generation is implemented, while free-form synthesis and the API remain planned — see [docs/DECISIONS.md](docs/DECISIONS.md) for decisions and trade-offs.
+The project uses Qdrant for local vector storage and sentence-transformers for embeddings. Dense, BM25, hybrid retrieval, cross-encoder reranking, page-level citations, and retrieval evaluation are implemented; evidence-constrained extractive generation is implemented, the FastAPI backend is implemented, while free-form synthesis remains planned — see [docs/DECISIONS.md](docs/DECISIONS.md) for decisions and trade-offs.
 
 ## Project structure
 
@@ -262,8 +273,9 @@ src/rag_agent/        Application package
   embeddings/         Embedding and vector indexing
   retrieval/          Dense, BM25, hybrid, reranking, citations
   generation/         Provider interface, evidence validation, cited answers
-  api/                (stub — Phase 7)
+  api/                FastAPI routes, schemas, lazy runtime, dependency injection
   evaluation/         Gold set, retrieval metrics, runner
+frontend/              React workspace, document management, frontend tests
 tests/                 Unit and integration tests
 data/                  Legally usable source documents and provenance
 docs/                  Architecture, decisions, and evaluation records
@@ -277,15 +289,13 @@ The current repository does not include OCR: image-only/scanned pages are warned
 
 ## Roadmap (planned, not implemented)
 
-Retrieval through Phase 5.4, retrieval metrics, and Phase 6 extractive generation are implemented. Remaining work:
+Retrieval through Phase 5.4, retrieval metrics, Phase 6 extractive generation, Phase 7 FastAPI, Phase 8 frontend, and Phase 9 document management are implemented. Remaining work:
 
 - **Generation extensions.** Free-form synthesis and streaming/SSE remain deferred;
   the current generator validates a complete structured response before rendering.
-- **Phase 7 — HTTP API.** `src/rag_agent/api/`: `/ingest`, `/query`, and
-  `/health` endpoints (FastAPI, not yet a dependency).
 - **Generation evaluation.** RAGAS metrics and a larger human-adjudicated
   retrieval benchmark remain planned. Existing retrieval metrics are implemented.
-- **Phase 9 — Dockerised demo.** A one-command demo (`docker compose up`)
+- **Packaged deployment.** A one-command demo (`docker compose up`)
   would need a `Dockerfile` that does not exist yet; today Qdrant is run via
   `docker-compose.yml` and indexing via the manual `docker run` commands in
   [Docker (recommended)](#docker-recommended).

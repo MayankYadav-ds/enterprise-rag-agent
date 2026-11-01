@@ -81,7 +81,10 @@ Given any already-configured `retriever` implementing the existing protocol:
 
 ```python
 from rag_agent.generation import (
-    AnswerGenerator, AnswerPipeline, GenerationConfig, build_provider,
+    AnswerGenerator,
+    AnswerPipeline,
+    GenerationConfig,
+    build_provider,
 )
 
 config = GenerationConfig.from_env()
@@ -158,7 +161,9 @@ quality or conflict-detection benchmark is claimed. Tests cover mocked model/HTT
 responses, citation integrity, abstention, conflicts, injection attempts, bounded
 output, errors, CLI behavior, and integration with all retrieval strategies.
 
-Free-form synthesis, streaming/SSE, conversation memory, HTTP API, and learned
+The Phase 7 HTTP integration is documented in [API.md](API.md).
+
+Free-form synthesis, streaming/SSE, conversation memory, and learned
 faithfulness evaluation are deferred. Buffering the whole response allows output
 validation before exposing any answer. Existing retrieval evaluation artifacts
 and canonical gold labels remain unchanged.

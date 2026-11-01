@@ -64,7 +64,13 @@ def _client_for(location: str) -> QdrantClient:
 
 
 class QdrantStore:
-    """Wraps a Qdrant collection for chunk embeddings."""
+    """Wraps a Qdrant collection for chunk embeddings.
+
+    ``create_if_missing=False`` opens only existing collections, rejects
+    ``recreate=True``, and performs no initialization writes. This is not a
+    permission boundary for the store's explicit mutation methods. A supplied
+    ``client`` remains owned by the caller; existing CLI defaults are unchanged.
+    """
 
     def __init__(
         self,
@@ -73,12 +79,18 @@ class QdrantStore:
         url: str = ":memory:",
         recreate: bool = False,
         validate_dimension: bool = True,
+        *,
+        create_if_missing: bool = True,
+        client: QdrantClient | None = None,
     ) -> None:
         # ":memory:" selects Qdrant's local in-memory mode; any other value is
         # passed as a remote location (URL or host).
         self.embedder = embedder
         self.collection_name = collection_name
-        self._client = _client_for(url)
+        if not create_if_missing and recreate:
+            raise ValueError("recreate requires create_if_missing=True")
+        self._client = client if client is not None else _client_for(url)
+        self._create_if_missing = create_if_missing
         self._ensure_collection(recreate, validate_dimension=validate_dimension)
 
     def _ensure_collection(self, recreate: bool, validate_dimension: bool = True) -> None:
@@ -112,6 +124,8 @@ class QdrantStore:
                         "models is not supported. Use recreate=True to reset the collection."
                     )
             return
+        if not self._create_if_missing:
+            raise ValueError("Required Qdrant collection does not exist")
         self._client.create_collection(
             self.collection_name,
             vectors_config=models.VectorParams(
