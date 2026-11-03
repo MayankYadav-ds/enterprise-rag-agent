@@ -20,6 +20,7 @@ from rag_agent.api.routes import router
 from rag_agent.api.runtime import DependencyUnavailable, Runtime
 from rag_agent.api.settings import APISettings
 from rag_agent.auth.models import ensure_auth_schema
+from rag_agent.auth.password import dummy_password_hash
 from rag_agent.auth.routes import router as auth_router
 from rag_agent.generation import GenerationError, InvalidResponseError, ProviderError
 
@@ -38,6 +39,8 @@ def create_app(settings: APISettings | None = None) -> FastAPI:
         logger.addHandler(handler)
         logger.setLevel(runtime.settings.log_level)
         try:
+            # Keep the first unknown-user login from paying an extra hash-generation cost.
+            dummy_password_hash()
             ensure_auth_schema(runtime)
             yield
         finally:
@@ -98,7 +101,10 @@ def create_app(settings: APISettings | None = None) -> FastAPI:
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
-        return error(request, exc.status_code, "http_error", "Request cannot be processed")
+        response = error(request, exc.status_code, "http_error", "Request cannot be processed")
+        if exc.headers and "Retry-After" in exc.headers:
+            response.headers["Retry-After"] = exc.headers["Retry-After"]
+        return response
 
     @app.exception_handler(DependencyUnavailable)
     @app.exception_handler(ProviderError)

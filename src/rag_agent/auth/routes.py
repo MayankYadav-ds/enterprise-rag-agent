@@ -1,5 +1,6 @@
 """Authentication endpoints backed by opaque server-side sessions."""
 
+import sqlite3
 from datetime import timedelta
 from typing import Annotated
 from urllib.parse import urlsplit
@@ -17,7 +18,8 @@ from rag_agent.auth.models import (
     get_user_by_username,
     set_csrf_hash,
 )
-from rag_agent.auth.password import verify_password
+from rag_agent.auth.password import dummy_password_hash, is_argon2id_hash, verify_password
+from rag_agent.auth.rate_limit import finish_login_attempt, login_bucket, reserve_login_attempt
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -53,11 +55,55 @@ def login(
     if origin is None or origin not in runtime.settings.trusted_origins:
         raise HTTPException(status_code=400, detail="Untrusted Origin")
 
-    with runtime.connection() as conn:
-        user = get_user_by_username(conn, payload.username)
-        if user is None or not verify_password(user[1], payload.password):
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-        raw_token, csrf_token = create_session(conn, user[0], lifetime=timedelta(hours=8))
+    bucket = login_bucket(request.client.host if request.client else None)
+    try:
+        with runtime.connection() as conn:
+            admission = reserve_login_attempt(
+                conn,
+                bucket,
+                window_seconds=runtime.settings.login_rate_limit_window_seconds,
+                limit=runtime.settings.login_rate_limit_attempts,
+            )
+            if admission.reservation is not None:
+                user = get_user_by_username(conn, payload.username)
+    except sqlite3.Error as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication temporarily unavailable",
+            headers={"Retry-After": "1"},
+        ) from exc
+
+    if admission.reservation is None:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts",
+            headers={"Retry-After": str(admission.retry_after or 1)},
+        )
+
+    reservation = admission.reservation
+    password_hash = user[1] if user and is_argon2id_hash(user[1]) else dummy_password_hash()
+    password_valid = verify_password(password_hash, payload.password)
+    authenticated = user is not None and password_valid
+
+    try:
+        with runtime.connection() as conn:
+            finish_login_attempt(conn, reservation, succeeded=authenticated)
+            response_data = (
+                create_session(conn, user[0], lifetime=timedelta(hours=8))
+                if authenticated and user is not None
+                else None
+            )
+    except sqlite3.Error as exc:
+        # Do not issue a session if accounting could not be durably completed.
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication temporarily unavailable",
+            headers={"Retry-After": "1"},
+        ) from exc
+
+    if not authenticated or response_data is None:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    raw_token, csrf_token = response_data
 
     response = JSONResponse(status_code=200, content={"csrf_token": csrf_token})
     response.set_cookie(

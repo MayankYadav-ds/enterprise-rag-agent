@@ -84,6 +84,12 @@ def test_generator_is_lazy_cached_and_configuration_failure_is_retriable(monkeyp
         {"rerank_candidates": 101},
         {"qdrant_timeout": 0},
         {"qdrant_timeout": float("inf")},
+        {"qdrant_url": "http://qdrant.internal:6333"},
+        {"qdrant_url": "https://qdrant.example.com:6333"},
+        {"qdrant_url": "https://qdrant.example.com:6333", "qdrant_api_key": ""},
+        {"qdrant_url": "https://qdrant.example.com:6333", "qdrant_api_key": "   "},
+        {"login_rate_limit_attempts": 0},
+        {"login_rate_limit_window_seconds": 30},
     ],
 )
 def test_invalid_settings(values):
@@ -106,6 +112,34 @@ def test_environment_configuration_requires_explicit_environment(monkeypatch):
     monkeypatch.delenv("RAG_ENV", raising=False)
     with pytest.raises(ValueError, match="RAG_ENV must be explicitly set"):
         APISettings.from_env()
+
+
+def test_remote_qdrant_requires_tls_and_authentication():
+    settings = APISettings(
+        qdrant_url="https://qdrant.example.com:6333", qdrant_api_key="private-key"
+    )
+    assert settings.qdrant_url == "https://qdrant.example.com:6333"
+    assert "private-key" not in repr(settings) + settings.model_dump_json()
+
+
+def test_local_qdrant_http_remains_available():
+    assert APISettings(qdrant_url="http://localhost:6333").qdrant_url == "http://localhost:6333"
+
+
+def test_storage_permissions_are_private_on_posix(tmp_path):
+    import os
+    import stat
+
+    from rag_agent.api.storage import private_directory, private_file
+
+    if os.name != "posix":
+        pytest.skip("POSIX permission modes are not enforced on Windows")
+    directory = private_directory(tmp_path / "private")
+    artifact = directory / "registry.sqlite3"
+    artifact.write_bytes(b"temporary test registry")
+    private_file(artifact)
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+    assert stat.S_IMODE(artifact.stat().st_mode) == 0o600
 
 
 def test_production_requires_explicit_https_trusted_origins(monkeypatch):

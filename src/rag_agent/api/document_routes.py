@@ -5,6 +5,7 @@ authentication and CSRF validation. Document recovery also requires admin
 authorization.
 """
 
+import os
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
@@ -17,6 +18,7 @@ from rag_agent.api.documents import (
     safe_filename,
 )
 from rag_agent.api.runtime import DependencyUnavailable
+from rag_agent.api.storage import private_file
 
 # Correct import path for auth dependencies
 from rag_agent.auth.dependencies import csrf_required, get_current_user, require_admin
@@ -66,7 +68,8 @@ async def upload(
         # Exclusive creation under server-owned storage, never a client-selected path.
         size = 0
         header = bytearray()
-        with path.open("xb") as file:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as file:
             async for block in request.stream():
                 size += len(block)
                 if size > limit:
@@ -76,6 +79,7 @@ async def upload(
                 if len(header) < 5:
                     header.extend(block[: 5 - len(header)])
                 file.write(block)
+        private_file(path)
         if header != b"%PDF-":
             raise DocumentError(415, "invalid_pdf", "The file does not have a PDF signature")
         try:

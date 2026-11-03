@@ -42,9 +42,22 @@ Authentication uses the same SQLite registry under `RAG_DOCUMENT_DIR`. Set
 configuration, or `RAG_ENV=production` for production; startup through
 `APISettings.from_env()` rejects an unset value. An
 operator provisions users without exposing passwords in shell history with
-`.venv\\Scripts\\python.exe scripts/create_user.py <username> [--admin]`;
-the password is prompted twice and must contain at least 12 characters. There is
-no public registration endpoint. `RAG_TRUSTED_ORIGINS` is a comma-separated
+`.venv\\Scripts\\python.exe scripts/create_user.py <username> --admin` before
+any account exists. This creates the initial owner; there is no public
+registration or subsequent account-creation command. The password is prompted
+twice and must contain 12 to 1024 characters. For local-console recovery, run
+`.venv\\Scripts\\python.exe scripts/reset_owner_password.py <username>`; it
+prompts for the new password and revokes all sessions for the owner. There is no
+web recovery endpoint. Login failures are throttled per direct client address;
+the default is 10 failures per 15 minutes, configurable with the variables below.
+The limiter reserves each in-flight login in a short SQLite `BEGIN IMMEDIATE`
+transaction before password verification, then records failure or clears prior
+failures in a second transaction. SQLite coordinates independent connections
+and workers sharing this local database file; this is not distributed rate
+limiting across hosts or separate databases. Database contention fails closed
+with a temporary service error. Successful authentication clears the peer's
+failure count.
+`RAG_TRUSTED_ORIGINS` is a comma-separated
 allowlist used for login and CSRF-token refresh. Production requires an explicit
 `RAG_TRUSTED_ORIGINS` value containing one or more HTTPS origins; HTTP origins are
 rejected. Production session cookies use Secure, HttpOnly, SameSite=Lax, and
@@ -61,8 +74,10 @@ authenticated users share the configured corpus and document-management scope.
 
 | Variable | Default / meaning |
 | --- | --- |
-| `QDRANT_URL` | `http://localhost:6333`; HTTP(S) origin, no embedded credentials |
-| `QDRANT_API_KEY` | Optional secret, excluded from configuration serialization |
+| `QDRANT_URL` | `http://localhost:6333`; remote Qdrant requires HTTPS |
+| `QDRANT_API_KEY` | Required for non-loopback Qdrant; excluded from configuration serialization |
+| `RAG_LOGIN_RATE_LIMIT_ATTEMPTS` | 10 failed attempts per direct client address |
+| `RAG_LOGIN_RATE_LIMIT_WINDOW_SECONDS` | 900 seconds; range 60-86400 |
 | `RAG_API_COLLECTION` | `rag_chunks`; must already exist |
 | `RAG_API_QDRANT_TIMEOUT` | 10 seconds, positive and at most 120 |
 | `RAG_LOG_LEVEL` | `INFO`; DEBUG/INFO/WARNING/ERROR/CRITICAL |
@@ -305,8 +320,10 @@ historical evaluation files are never deletion targets. Legacy documents are not
 automatically adopted even if their content hashes match.
 
 Protected document routes require authentication, state-changing routes require
-CSRF validation, and recovery is admin-only. The implementation has no distributed
-job queue, upload-rate limit, malware scanner, parser process sandbox, or automatic
+CSRF validation, and recovery is admin-only. Login throttling uses the direct peer
+address visible to the API, not untrusted forwarded headers; behind a proxy this
+can aggregate clients unless deployment configures the trusted network boundary.
+The implementation has no distributed job queue, upload-rate limit, malware scanner, parser process sandbox, or automatic
 retention policy. Byte/page/chunk limits do not bound every possible PDF parser
 resource cost.
 Add deployment controls before accepting untrusted public uploads. Health and docs

@@ -1,5 +1,6 @@
 """Server-owned configuration; no network or model loading at import time."""
 
+import ipaddress
 import os
 from pathlib import Path
 from typing import Literal
@@ -20,6 +21,8 @@ class APISettings(BaseModel):
     upload_max_bytes: int = Field(default=20 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
     document_max_pages: int = Field(default=500, ge=1, le=5000)
     document_max_chunks: int = Field(default=10000, ge=1, le=100000)
+    login_rate_limit_attempts: int = Field(default=10, ge=1, le=100)
+    login_rate_limit_window_seconds: int = Field(default=900, ge=60, le=86400)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     environment: Literal["development", "test", "production"] = "development"
     trusted_origins: tuple[str, ...] = (
@@ -66,6 +69,23 @@ class APISettings(BaseModel):
             raise ValueError("Qdrant URL must be an HTTP(S) origin without credentials")
         return value.rstrip("/")
 
+    @model_validator(mode="after")
+    def validate_remote_qdrant_transport(self) -> "APISettings":
+        host = urlsplit(self.qdrant_url).hostname
+        if host is None:
+            raise ValueError("Qdrant URL requires a host")
+        try:
+            loopback = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            loopback = host.casefold() == "localhost"
+        if not loopback and urlsplit(self.qdrant_url).scheme != "https":
+            raise ValueError("remote Qdrant connections require HTTPS")
+        if not loopback and (
+            self.qdrant_api_key is None or not self.qdrant_api_key.get_secret_value().strip()
+        ):
+            raise ValueError("remote Qdrant connections require QDRANT_API_KEY")
+        return self
+
     @classmethod
     def from_env(cls) -> "APISettings":
         environment = os.environ.get("RAG_ENV")
@@ -83,6 +103,8 @@ class APISettings(BaseModel):
             "upload_max_bytes": "RAG_UPLOAD_MAX_BYTES",
             "document_max_pages": "RAG_DOCUMENT_MAX_PAGES",
             "document_max_chunks": "RAG_DOCUMENT_MAX_CHUNKS",
+            "login_rate_limit_attempts": "RAG_LOGIN_RATE_LIMIT_ATTEMPTS",
+            "login_rate_limit_window_seconds": "RAG_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
             "log_level": "RAG_LOG_LEVEL",
             "environment": "RAG_ENV",
         }

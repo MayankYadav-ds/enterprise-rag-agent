@@ -10,6 +10,7 @@ from qdrant_client import QdrantClient
 from rag_agent.api.documents import DocumentManager
 from rag_agent.api.schemas import RetrievalRequest
 from rag_agent.api.settings import APISettings
+from rag_agent.api.storage import private_directory, private_file
 from rag_agent.embeddings.fake import FakeEmbedder
 from rag_agent.embeddings.protocol import Embedder
 from rag_agent.embeddings.sentence_transformer import SentenceTransformerEmbedder
@@ -47,8 +48,9 @@ class Runtime:
     def connection(self) -> Iterator[sqlite3.Connection]:
         """Open a short-lived connection to the app's shared local registry DB."""
         path = self.settings.document_dir / "inventory.sqlite3"
-        path.parent.mkdir(parents=True, exist_ok=True)
+        private_directory(path.parent)
         connection = sqlite3.connect(path, timeout=10)
+        private_file(path)
         try:
             connection.execute("PRAGMA foreign_keys = ON")
             with connection:
