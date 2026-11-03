@@ -12,6 +12,7 @@ From the repository root, start the backend in one PowerShell terminal:
 ```powershell
 $env:HF_HUB_OFFLINE = "1"
 $env:TRANSFORMERS_OFFLINE = "1"
+$env:RAG_ENV = "development"
 $env:QDRANT_URL = "http://localhost:6333"
 $env:RAG_LLM_MODEL = "your-already-installed-model"
 .venv\Scripts\python.exe -m uvicorn rag_agent.api.app:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
@@ -30,10 +31,11 @@ npm run dev
 ```
 
 Open the URL printed by Vite, normally `http://127.0.0.1:5173`. The development
-proxy forwards `/health` and `/api/v1/*` to `http://127.0.0.1:8000`. Backend CORS
-changes are unnecessary for this same-origin browser connection. Health and the
-interface can be checked without a live LLM; actual queries require the services
-and models described in the backend documentation.
+proxy forwards `/health`, `/auth/*`, and `/api/v1/*` to
+`http://127.0.0.1:8000`. Backend CORS changes are unnecessary for this same-origin
+browser connection. Health and the interface can be checked without a live LLM;
+actual queries require the services and models described in the backend
+documentation.
 
 ## Configuration and deployment
 
@@ -63,11 +65,30 @@ npm run preview
 
 The production build is `frontend/dist/`. Vite preview supports the same proxy
 for local build inspection; it is not a production server. For deployment, serve
-the static build with an HTTPS reverse proxy forwarding `/health` and `/api/v1/*`
-to FastAPI. Vite's development proxy does not exist inside the static build.
+the static build with an HTTPS reverse proxy forwarding `/health`, `/auth/*`,
+and `/api/v1/*` to FastAPI on the same origin. Preserve the `Set-Cookie` and
+`Cookie` headers and the `/` cookie path. Vite's development proxy does not exist
+inside the static build.
 An absolute, cross-origin `VITE_API_BASE_URL` requires an explicit allowed-origin
 CORS policy at the backend/proxy; the current FastAPI application has none.
-Authentication, authorization, and rate limiting remain deployment work.
+Set backend `RAG_ENV=production` and `RAG_TRUSTED_ORIGINS` to a comma-separated
+list containing only the exact HTTPS frontend origins. Startup rejects missing
+`RAG_ENV`, a missing production origin list, or HTTP production origins. This
+enables Secure, HttpOnly, SameSite=Lax, Path=/ session cookies. Local HTTP
+development requires the explicit `RAG_ENV=development` setting. Sessions expire
+after eight hours; protected API 401 responses return the UI to login. The
+configured document corpus remains shared among authenticated users; per-user
+ownership, tenant isolation, and rate limiting are not implemented.
+
+At application startup, `AuthProvider` attempts to restore the authenticated
+session. A successful restoration displays the authenticated workspace. If
+restoration fails for any reason—including an expired or invalid session, a
+backend outage, a network error, or another transient error—the current frontend
+treats the user as unauthenticated and displays the login screen. A temporary
+backend or network failure can therefore look like a logged-out session; it does
+not necessarily mean the server-side session expired or was revoked. A future
+improvement could distinguish authentication failures such as HTTP 401 from
+temporary service or network failures. That distinction is not implemented.
 
 ## Screens and supported behavior
 
@@ -116,8 +137,9 @@ with the owned PDF and vector points; metadata tombstones remain. Older answers 
 tab history retain their evidence snapshots. See [API.md](API.md) for the integrity
 contract and recovery behavior.
 
+Authentication, including session restoration and expiry handling, is implemented.
 Remaining gaps are PDF download/viewer links, service readiness beyond liveness,
-server reranking-limit discovery, authentication, and a distributed job queue.
+server reranking-limit discovery, and a distributed job queue.
 There is no automatic adoption/deletion of legacy CLI documents. Run one API worker
 and do not run external collection writers concurrently. API-managed mutations
 refresh retrieval caches automatically; offline CLI indexing requires a restart.

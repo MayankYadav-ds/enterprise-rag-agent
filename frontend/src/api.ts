@@ -7,6 +7,38 @@ import type {
 } from "./types";
 
 const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+let csrfToken: string | null = null;
+let expirationNotified = false;
+export const AUTHENTICATION_EXPIRED_EVENT = "rag-agent:authentication-expired";
+export function setCsrfToken(token: string | null) {
+  csrfToken = token;
+  if (token) expirationNotified = false;
+}
+export function currentCsrfToken() {
+  return csrfToken;
+}
+export async function apiFetch(path: string, init: RequestInit = {}) {
+  const method = (init.method || "GET").toUpperCase();
+  const headers = new Headers(init.headers);
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && csrfToken)
+    headers.set("X-CSRF-Token", csrfToken);
+  const response = await fetch(base + path, {
+    ...init,
+    headers,
+    credentials: "include",
+  });
+  const isProtectedPath =
+    path.startsWith("/api/v1/") ||
+    path === "/auth/csrf" ||
+    path === "/auth/logout";
+  if (response.status === 401 && isProtectedPath && !expirationNotified) {
+    expirationNotified = true;
+    csrfToken = null;
+    if (typeof window !== "undefined")
+      window.dispatchEvent(new Event(AUTHENTICATION_EXPIRED_EVENT));
+  }
+  return response;
+}
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object";
 const string = (value: unknown): value is string => typeof value === "string";
@@ -80,7 +112,7 @@ async function request(
 ): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(base + path, {
+    response = await apiFetch(path, {
       signal,
       ...(body
         ? {

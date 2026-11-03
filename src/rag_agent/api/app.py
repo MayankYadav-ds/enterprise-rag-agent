@@ -19,6 +19,8 @@ from rag_agent.api.documents import DocumentError
 from rag_agent.api.routes import router
 from rag_agent.api.runtime import DependencyUnavailable, Runtime
 from rag_agent.api.settings import APISettings
+from rag_agent.auth.models import ensure_auth_schema
+from rag_agent.auth.routes import router as auth_router
 from rag_agent.generation import GenerationError, InvalidResponseError, ProviderError
 
 logger = logging.getLogger("rag_agent.api")
@@ -36,6 +38,7 @@ def create_app(settings: APISettings | None = None) -> FastAPI:
         logger.addHandler(handler)
         logger.setLevel(runtime.settings.log_level)
         try:
+            ensure_auth_schema(runtime)
             yield
         finally:
             runtime.close()
@@ -50,6 +53,7 @@ def create_app(settings: APISettings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.runtime = runtime
+    app.include_router(auth_router)
     app.include_router(router)
     app.include_router(document_router)
 

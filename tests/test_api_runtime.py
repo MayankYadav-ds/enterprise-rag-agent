@@ -92,12 +92,41 @@ def test_invalid_settings(values):
 
 
 def test_environment_settings_hide_credentials(monkeypatch):
+    monkeypatch.setenv("RAG_ENV", "test")
+    monkeypatch.delenv("RAG_TRUSTED_ORIGINS", raising=False)
     monkeypatch.setenv("QDRANT_API_KEY", "private-key")
     monkeypatch.setenv("RAG_API_COLLECTION", "test_chunks")
     monkeypatch.setenv("RERANKER_CANDIDATE_COUNT", "30")
     settings = APISettings.from_env()
     assert settings.collection == "test_chunks" and settings.rerank_candidates == 30
     assert "private-key" not in repr(settings) + settings.model_dump_json()
+
+
+def test_environment_configuration_requires_explicit_environment(monkeypatch):
+    monkeypatch.delenv("RAG_ENV", raising=False)
+    with pytest.raises(ValueError, match="RAG_ENV must be explicitly set"):
+        APISettings.from_env()
+
+
+def test_production_requires_explicit_https_trusted_origins(monkeypatch):
+    monkeypatch.setenv("RAG_ENV", "production")
+    monkeypatch.delenv("RAG_TRUSTED_ORIGINS", raising=False)
+    with pytest.raises(ValueError, match="production requires RAG_TRUSTED_ORIGINS"):
+        APISettings.from_env()
+
+    monkeypatch.setenv("RAG_TRUSTED_ORIGINS", "http://localhost:5173")
+    with pytest.raises(ValidationError, match="production requires one or more HTTPS"):
+        APISettings.from_env()
+
+    monkeypatch.setenv("RAG_TRUSTED_ORIGINS", "https://app.example.com")
+    settings = APISettings.from_env()
+    assert settings.environment == "production"
+    assert settings.trusted_origins == ("https://app.example.com",)
+
+
+def test_production_settings_reject_default_development_origins():
+    with pytest.raises(ValidationError, match="production requires one or more HTTPS"):
+        APISettings(environment="production")
 
 
 @pytest.mark.parametrize("strategy", ["dense", "bm25", "hybrid"])

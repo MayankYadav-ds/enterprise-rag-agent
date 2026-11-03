@@ -1,12 +1,25 @@
-"""Bounded raw-PDF uploads, durable status, inventory and managed deletion."""
+"""Bounded raw-PDF uploads, durable status, inventory and managed deletion.
+
+Private read routes require authentication. State-changing routes require
+authentication and CSRF validation. Document recovery also requires admin
+authorization.
+"""
 
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from starlette.concurrency import run_in_threadpool
 
-from rag_agent.api.documents import DocumentError, DocumentManager, DocumentRecord, safe_filename
+from rag_agent.api.documents import (
+    DocumentError,
+    DocumentManager,
+    DocumentRecord,
+    safe_filename,
+)
 from rag_agent.api.runtime import DependencyUnavailable
+
+# Correct import path for auth dependencies
+from rag_agent.auth.dependencies import csrf_required, get_current_user, require_admin
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
@@ -25,9 +38,12 @@ async def manager(request: Request) -> DocumentManager:
             "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}},
         }
     },
+    dependencies=[Depends(get_current_user), Depends(csrf_required)],
 )
 async def upload(
-    request: Request, background: BackgroundTasks, filename: str = Query(max_length=120)
+    request: Request,
+    background: BackgroundTasks,
+    filename: str = Query(max_length=120),
 ) -> DocumentRecord:
     filename = safe_filename(filename)
     if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/pdf":
@@ -76,7 +92,7 @@ async def upload(
             path.unlink(missing_ok=True)
 
 
-@router.get("", response_model=list[DocumentRecord])
+@router.get("", response_model=list[DocumentRecord], dependencies=[Depends(get_current_user)])
 async def inventory(request: Request) -> list[DocumentRecord]:
     service = await manager(request)
     try:
@@ -85,18 +101,26 @@ async def inventory(request: Request) -> list[DocumentRecord]:
         raise DependencyUnavailable("Document inventory unavailable") from exc
 
 
-@router.post("/recover", status_code=204)
+@router.post(
+    "/recover",
+    status_code=204,
+    dependencies=[Depends(require_admin), Depends(csrf_required)],
+)
 async def recover(request: Request) -> None:
     service = await manager(request)
     await run_in_threadpool(service.recover)
     await run_in_threadpool(service.ensure_readable)
 
 
-@router.get("/{doc_id}", response_model=DocumentRecord)
+@router.get("/{doc_id}", response_model=DocumentRecord, dependencies=[Depends(get_current_user)])
 async def status(doc_id: str, request: Request) -> DocumentRecord:
     return await run_in_threadpool((await manager(request)).get, doc_id)
 
 
-@router.delete("/{doc_id}", response_model=DocumentRecord)
+@router.delete(
+    "/{doc_id}",
+    response_model=DocumentRecord,
+    dependencies=[Depends(get_current_user), Depends(csrf_required)],
+)
 async def delete(doc_id: str, request: Request) -> DocumentRecord:
     return await run_in_threadpool((await manager(request)).delete, doc_id)

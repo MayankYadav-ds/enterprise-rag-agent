@@ -11,6 +11,8 @@ from rag_agent.api.app import create_app
 from rag_agent.api.documents import DocumentError, DocumentManager, safe_filename
 from rag_agent.api.schemas import RetrievalRequest
 from rag_agent.api.settings import APISettings
+from rag_agent.auth.models import create_user, ensure_auth_schema
+from rag_agent.auth.password import hash_password
 from rag_agent.embeddings.fake import FakeEmbedder
 from rag_agent.embeddings.store import QdrantStore
 
@@ -27,12 +29,22 @@ def system(tmp_path, monkeypatch):
     settings = APISettings(document_dir=tmp_path / "managed", upload_max_bytes=2048)
     app = create_app(settings)
     runtime = app.state.runtime
+    ensure_auth_schema(runtime)
+    with runtime.connection() as db:
+        create_user(db, "doc-admin", hash_password("document-test-password-42"), is_admin=True)
     qdrant = QdrantClient(":memory:")
     embedder = FakeEmbedder()
     QdrantStore(embedder, client=qdrant)
     runtime._client = qdrant
     monkeypatch.setattr(runtime, "embedding", lambda: embedder)
     with TestClient(app) as client:
+        login = client.post(
+            "/auth/login",
+            headers={"Origin": "http://localhost:5173"},
+            json={"username": "doc-admin", "password": "document-test-password-42"},
+        )
+        assert login.status_code == 200
+        client.headers["X-CSRF-Token"] = login.json()["csrf_token"]
         yield client, runtime, qdrant
 
 

@@ -37,6 +37,28 @@ Use one worker for the local demo. Each extra worker owns separate model caches.
 Export environment variables before starting the process; `.env` is not loaded
 automatically. Client requests cannot change service URLs, model names, or keys.
 
+Authentication uses the same SQLite registry under `RAG_DOCUMENT_DIR`. Set
+`RAG_ENV=development` for local HTTP operation, `RAG_ENV=test` for test
+configuration, or `RAG_ENV=production` for production; startup through
+`APISettings.from_env()` rejects an unset value. An
+operator provisions users without exposing passwords in shell history with
+`.venv\\Scripts\\python.exe scripts/create_user.py <username> [--admin]`;
+the password is prompted twice and must contain at least 12 characters. There is
+no public registration endpoint. `RAG_TRUSTED_ORIGINS` is a comma-separated
+allowlist used for login and CSRF-token refresh. Production requires an explicit
+`RAG_TRUSTED_ORIGINS` value containing one or more HTTPS origins; HTTP origins are
+rejected. Production session cookies use Secure, HttpOnly, SameSite=Lax, and
+Path=/; local development permits HTTP while keeping HttpOnly and SameSite=Lax.
+The frontend proxy must forward `/health`, `/auth/*`, and `/api/v1/*` to FastAPI.
+The frontend holds the CSRF token
+in memory and refreshes it after restoring a valid session. The server retains a
+bounded set of recent CSRF token hashes per session so other active tabs continue
+to work after a refresh. Sessions expire after eight hours; logout revokes the
+stored session and its CSRF verifiers. A protected API 401 expires the frontend
+session and returns the user to login. Recovery requires an admin user.
+Authentication does not yet provide per-user document ownership or tenant isolation:
+authenticated users share the configured corpus and document-management scope.
+
 | Variable | Default / meaning |
 | --- | --- |
 | `QDRANT_URL` | `http://localhost:6333`; HTTP(S) origin, no embedded credentials |
@@ -193,9 +215,12 @@ wiring. They establish no model-quality result and contact no live services.
 .venv\Scripts\python.exe -m ruff check .
 ```
 
-This is a local/trusted-use API, without authentication, authorization, admission
-control, rate limiting, or streaming. Do not expose it publicly without deployment
-hardening. Gold data, historical evaluations, and CLI interfaces are unchanged.
+The health endpoint, login endpoint, and API documentation/OpenAPI endpoints are
+public. Protected retrieval, query, and document endpoints require authentication;
+state-changing protected requests also require CSRF validation. Document recovery
+requires admin authorization. Admission control, rate limiting, and streaming are
+not implemented. Do not expose the service publicly without deployment hardening.
+Gold data, historical evaluations, and CLI interfaces are unchanged.
 Managed document mutations are explicit API operations described below.
 No live-LLM quality benchmark is claimed.
 
@@ -279,8 +304,10 @@ their original evidence snapshots. Other documents, datasets, gold labels, and
 historical evaluation files are never deletion targets. Legacy documents are not
 automatically adopted even if their content hashes match.
 
-This local/trusted-use implementation has no authentication, distributed job queue,
-upload-rate limit, malware scanner, parser process sandbox, or automatic retention
-policy. Byte/page/chunk limits do not bound every possible PDF parser resource cost.
+Protected document routes require authentication, state-changing routes require
+CSRF validation, and recovery is admin-only. The implementation has no distributed
+job queue, upload-rate limit, malware scanner, parser process sandbox, or automatic
+retention policy. Byte/page/chunk limits do not bound every possible PDF parser
+resource cost.
 Add deployment controls before accepting untrusted public uploads. Health and docs
 do not initialize storage or contact services.

@@ -26,8 +26,21 @@ import {
   type Screen,
 } from "./components";
 import type { RetrievalRequest, Turn } from "./types";
+import { AuthProvider, useAuth } from "./AuthProvider";
+import { ProtectedRoute } from "./ProtectedRoute";
 
 export default function App() {
+  return (
+    <AuthProvider>
+      <ProtectedRoute>
+        <Workspace />
+      </ProtectedRoute>
+    </AuthProvider>
+  );
+}
+
+function Workspace() {
+  const { user, logout } = useAuth();
   const [screen, setScreen] = useState<Screen>("Overview");
   const [health, setHealth] = useState<Health>("checking");
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -164,8 +177,16 @@ export default function App() {
         <div className="sidebar-bottom">
           <span className="avatar">ER</span>
           <div>
-            Local workspace<small>Session-only history</small>
+            {user?.username}
+            <small>Session-only history</small>
           </div>
+          <button
+            className="text-button"
+            onClick={() => void logout()}
+            aria-label="Sign out"
+          >
+            Sign out
+          </button>
         </div>
       </aside>
       <div className="main-shell">
@@ -192,7 +213,9 @@ export default function App() {
               refresh={() => void checkHealth()}
             />
           )}
-          {screen === "Documents" && <Documents />}
+          {screen === "Documents" && (
+            <Documents isAdmin={user?.is_admin === true} />
+          )}
           {screen === "AI workspace" && (
             <>
               <div className="chat-heading">

@@ -5,7 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const proxy = Object.fromEntries(
-    ["/health", "/api/v1"].map((path) => [
+    ["/health", "/auth", "/api/v1"].map((path) => [
       path,
       {
         target: env.API_PROXY_TARGET || "http://127.0.0.1:8000",
