@@ -1,0 +1,221 @@
+name: ARM64 runtime validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  arm64-runtime:
+    name: Python 3.11 Linux ARM64 locked runtime
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    env:
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_DATASETS_OFFLINE: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PYTHONPATH: src
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.11 ARM64
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+          architecture: arm64
+
+      - name: Verify runner architecture and Python version
+        run: |
+          python - <<'PY'
+          import platform
+          import sys
+
+          print(f"Python: {sys.version}")
+          print(f"Architecture: {platform.machine()}")
+          assert sys.version_info[:2] == (3, 11), sys.version
+          assert platform.machine().lower() in {"aarch64", "arm64"}, platform.machine()
+          PY
+
+      - name: Create an isolated runtime virtual environment
+        run: |
+          python -m venv "$RUNNER_TEMP/arm64-validation-venv"
+          echo "ARM64_PYTHON=$RUNNER_TEMP/arm64-validation-venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Prepare locked third-party requirements outside the repository
+        run: |
+          python - <<'PY'
+          import os
+          import tempfile
+          from pathlib import Path
+
+          lock_path = Path("requirements/arm64-cpu.lock")
+          lines = lock_path.read_text(encoding="utf-8").splitlines(keepends=True)
+          editable_lines = [line for line in lines if line.strip().startswith("-e")]
+          assert editable_lines == ["-e .\n"], editable_lines
+          filtered = [line for line in lines if line.strip() != "-e ."]
+          assert len(filtered) == len(lines) - 1
+          package_lines = [
+              line.strip()
+              for line in filtered
+              if line.strip() and not line.lstrip().startswith(("#", "--"))
+          ]
+          assert package_lines and all("==" in line for line in package_lines)
+
+          workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          with tempfile.NamedTemporaryFile(
+              mode="w", encoding="utf-8", prefix="arm64-locked-", suffix=".txt", delete=False
+          ) as requirements_file:
+              requirements_file.writelines(filtered)
+              requirements_path = Path(requirements_file.name).resolve()
+          assert not requirements_path.is_relative_to(workspace), requirements_path
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as github_env:
+              github_env.write(f"ARM64_LOCKED_REQUIREMENTS={requirements_path}\n")
+          print(f"Prepared {len(filtered)} original lock lines with only '-e .' excluded")
+          print(f"Exactly pinned third-party package entries: {len(package_lines)}")
+          print(f"Temporary requirements file: {requirements_path}")
+          PY
+
+      - name: Install exact third-party versions from the ARM64 lock
+        run: |
+          "$ARM64_PYTHON" -m pip install --no-deps --only-binary=:all: --requirement "$ARM64_LOCKED_REQUIREMENTS"
+
+      - name: Check installed dependency consistency
+        run: |
+          "$ARM64_PYTHON" -m pip check
+
+      - name: Record installed package versions
+        run: |
+          "$ARM64_PYTHON" -m pip freeze
+
+      - name: Verify imports, CPU tensor, mocked embedding, API startup, and storage modes
+        run: |
+          "$ARM64_PYTHON" - <<'PY'
+          import importlib
+          import importlib.metadata
+          import os
+          import platform
+          import stat
+          import sys
+          import tempfile
+          from pathlib import Path
+          from unittest.mock import patch
+
+          assert sys.version_info[:2] == (3, 11)
+          assert platform.machine().lower() in {"aarch64", "arm64"}
+          print(f"Runtime: Python {platform.python_version()} / {platform.machine()}")
+
+          distributions = {
+              "torch": "torch",
+              "sentence_transformers": "sentence-transformers",
+              "transformers": "transformers",
+              "tokenizers": "tokenizers",
+              "pymupdf": "PyMuPDF",
+              "tiktoken": "tiktoken",
+              "qdrant_client": "qdrant-client",
+              "fastapi": "fastapi",
+          }
+          for module_name, distribution_name in distributions.items():
+              module = importlib.import_module(module_name)
+              version = importlib.metadata.version(distribution_name)
+              print(f"Import OK: {module_name} ({version})")
+
+          project_modules = [
+              "rag_agent.api.app",
+              "rag_agent.api.runtime",
+              "rag_agent.api.settings",
+              "rag_agent.api.storage",
+              "rag_agent.api.documents",
+              "rag_agent.api.routes",
+              "rag_agent.api.document_routes",
+              "rag_agent.auth.csrf",
+              "rag_agent.auth.dependencies",
+              "rag_agent.auth.models",
+              "rag_agent.auth.password",
+              "rag_agent.auth.rate_limit",
+              "rag_agent.auth.routes",
+              "rag_agent.chunking.pipeline",
+              "rag_agent.embeddings.sentence_transformer",
+              "rag_agent.embeddings.store",
+              "rag_agent.generation",
+              "rag_agent.ingestion.pdf_parser",
+              "rag_agent.ingestion.pipeline",
+              "rag_agent.retrieval.bm25",
+              "rag_agent.retrieval.dense",
+              "rag_agent.retrieval.hybrid",
+              "rag_agent.retrieval.reranker",
+          ]
+          for module_name in project_modules:
+              importlib.import_module(module_name)
+              print(f"Project import OK: {module_name}")
+
+          import torch
+
+          assert not torch.cuda.is_available(), "CPU lock unexpectedly exposes CUDA"
+          cpu_result = torch.tensor([2, 3], device="cpu").mul(2).sum()
+          assert cpu_result.device.type == "cpu" and cpu_result.item() == 10
+          print(f"CPU tensor operation OK: {cpu_result.item()} on {cpu_result.device}")
+
+          import sentence_transformers
+          from rag_agent.embeddings.sentence_transformer import SentenceTransformerEmbedder
+
+          class LocalTorchModel:
+              """Tiny deterministic local model; never loads or downloads weights."""
+
+              def __init__(self, model_name: str, *, device: str) -> None:
+                  assert model_name == "local-arm64-validation-mock"
+                  assert device == "cpu"
+                  self.device = device
+
+              def get_embedding_dimension(self) -> int:
+                  return 2
+
+              def encode(self, texts, **kwargs):
+                  assert kwargs.get("device", self.device) == "cpu"
+                  rows = [[float(len(text)), float(sum(map(ord, text)) % 97)] for text in texts]
+                  return torch.tensor(rows, dtype=torch.float32, device="cpu")
+
+          with patch.object(sentence_transformers, "SentenceTransformer", LocalTorchModel):
+              embedder = SentenceTransformerEmbedder(
+                  "local-arm64-validation-mock", instruction="", device="cpu"
+              )
+              vector = embedder.embed_query("arm64")
+              document_vectors = embedder.embed_documents(["local", "smoke"])
+          assert embedder.dimension == 2
+          assert len(vector) == 2 and len(document_vectors) == 2
+          assert all(len(item) == 2 for item in document_vectors)
+          print("Mocked CPU embedding smoke test OK (no model weights accessed)")
+
+          from fastapi.testclient import TestClient
+          from rag_agent.api.app import create_app
+          from rag_agent.api.settings import APISettings
+
+          with tempfile.TemporaryDirectory(prefix="rag-arm64-api-") as temporary:
+              storage = Path(temporary) / "managed"
+              app = create_app(APISettings(environment="test", document_dir=storage))
+              assert app.state.runtime._client is None
+              assert app.state.runtime._generator is None
+              with TestClient(app) as client:
+                  response = client.get("/health")
+                  assert response.status_code == 200, response.text
+              assert app.state.runtime._client is None
+              assert app.state.runtime._generator is None
+          print("FastAPI app/lifespan and /health OK; Qdrant and Ollama were not contacted")
+
+          from rag_agent.api.storage import private_directory, private_file
+
+          with tempfile.TemporaryDirectory(prefix="rag-arm64-storage-") as temporary:
+              directory = private_directory(Path(temporary) / "private")
+              file_path = directory / "sample.sqlite3"
+              file_path.touch()
+              private_file(file_path)
+              assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+              assert stat.S_IMODE(file_path.stat().st_mode) == 0o600
+          assert os.name == "posix"
+          print("POSIX storage permissions OK (directory 0700, file 0600)")
+          PY
