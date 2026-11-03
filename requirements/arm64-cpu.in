@@ -1,0 +1,11 @@
+# Python 3.11 Linux ARM64 runtime. Pin the CPU build explicitly: upstream's
+# generic ARM64 torch selection may change accelerator variants over time.
+# Refresh: uv pip compile requirements/arm64-cpu.in --python-version 3.11
+# --python-platform aarch64-manylinux_2_28 --index-strategy unsafe-best-match
+# --only-binary :all: --no-header --no-annotate --emit-index-url
+# --output-file requirements/arm64-cpu.lock
+# This resolves package metadata only; no model weights are needed.
+--index-url https://pypi.org/simple
+--extra-index-url https://download.pytorch.org/whl/cpu
+-e .[api,embeddings]
+torch==2.15.0+cpu
