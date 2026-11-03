@@ -1,4 +1,4 @@
-import { apiBaseURL, APIError } from "./api";
+import { apiBaseURL, apiFetch, APIError, currentCsrfToken } from "./api";
 
 export interface DocumentRecord {
   doc_id: string;
@@ -71,7 +71,7 @@ async function call(
 ): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(apiBaseURL + "/api/v1/documents" + path, {
+    response = await apiFetch("/api/v1/documents" + path, {
       method,
       signal,
     });
@@ -121,7 +121,10 @@ export function uploadPDF(
         "/api/v1/documents?filename=" +
         encodeURIComponent(file.name),
     );
+    xhr.withCredentials = true;
     xhr.setRequestHeader("Content-Type", "application/pdf");
+    const csrf = currentCsrfToken();
+    if (csrf) xhr.setRequestHeader("X-CSRF-Token", csrf);
     xhr.timeout = 180000;
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable)

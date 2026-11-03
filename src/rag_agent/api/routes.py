@@ -1,4 +1,10 @@
-"""Thin synchronous endpoints; blocking work runs in FastAPI's worker pool."""
+"""Thin synchronous endpoints; blocking work runs in FastAPI's worker pool.
+
+All endpoints that expose or modify data are now protected using the
+authentication dependencies defined in ``rag_agent.auth.dependencies``.
+"""
+
+from __future__ import annotations
 
 from dataclasses import asdict
 from typing import Annotated
@@ -18,6 +24,7 @@ from rag_agent.api.schemas import (
     RetrievalRequest,
     RetrievalResponse,
 )
+from rag_agent.auth.dependencies import csrf_required, get_current_user
 from rag_agent.retrieval.citation import to_dict
 
 router = APIRouter()
@@ -35,7 +42,12 @@ def health() -> HealthResponse:
     return HealthResponse()
 
 
-@router.post("/api/v1/retrieve", response_model=RetrievalResponse, responses=errors)
+@router.post(
+    "/api/v1/retrieve",
+    response_model=RetrievalResponse,
+    responses=errors,
+    dependencies=[Depends(get_current_user), Depends(csrf_required)],
+)
 def retrieve(
     body: RetrievalRequest,
     request: Request,
@@ -51,7 +63,12 @@ def retrieve(
     )
 
 
-@router.post("/api/v1/query", response_model=QueryResponse, responses=errors)
+@router.post(
+    "/api/v1/query",
+    response_model=QueryResponse,
+    responses=errors,
+    dependencies=[Depends(get_current_user), Depends(csrf_required)],
+)
 def query(
     body: RetrievalRequest,
     request: Request,

@@ -8,7 +8,7 @@ import {
   type DocumentRecord,
 } from "./documents-api";
 
-export function Documents() {
+export function Documents({ isAdmin }: { isAdmin: boolean }) {
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -240,20 +240,21 @@ export function Documents() {
             )}
           </article>
         ))}
-        {documents.some((doc) =>
-          ["cleanup_required", "deleting"].includes(doc.status),
-        ) && (
-          <div className="recovery-note">
-            <p>Retrieval is paused until pending cleanup is confirmed.</p>
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={() => void recover()}
-            >
-              Retry recovery
-            </button>
-          </div>
-        )}
+        {isAdmin &&
+          documents.some((doc) =>
+            ["cleanup_required", "deleting"].includes(doc.status),
+          ) && (
+            <div className="recovery-note">
+              <p>Retrieval is paused until pending cleanup is confirmed.</p>
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={() => void recover()}
+              >
+                Retry recovery
+              </button>
+            </div>
+          )}
       </section>
       {confirm && (
         <section

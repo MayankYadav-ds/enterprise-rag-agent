@@ -21,7 +21,7 @@ it("renders metadata and requires explicit deletion confirmation", async () => {
   const remove = vi
     .spyOn(service, "deleteDocument")
     .mockResolvedValue({ ...record, status: "deleted" });
-  render(<Documents />);
+  render(<Documents isAdmin={false} />);
   expect(await screen.findByText("report.pdf")).toBeInTheDocument();
   await userEvent.click(
     screen.getByRole("button", { name: "Delete report.pdf" }),
@@ -55,7 +55,7 @@ it("uploads and refreshes inventory without equating transfer progress with proc
         abort: vi.fn(),
       };
     });
-  render(<Documents />);
+  render(<Documents isAdmin={false} />);
   await userEvent.upload(
     screen.getByLabelText("Choose PDF"),
     new File(["%PDF-"], "report.pdf", { type: "application/pdf" }),
@@ -70,7 +70,7 @@ it("uploads and refreshes inventory without equating transfer progress with proc
 it("rejects non-PDF drops before transfer", async () => {
   vi.spyOn(service, "listDocuments").mockResolvedValue([]);
   const transfer = vi.spyOn(service, "uploadPDF");
-  render(<Documents />);
+  render(<Documents isAdmin={false} />);
   fireEvent.drop(screen.getByRole("region", { name: "PDF upload" }), {
     dataTransfer: { files: [new File(["hello"], "bad.txt")] },
   });
@@ -83,7 +83,7 @@ it("shows upload failures and does not show success", async () => {
     promise: Promise.reject(new Error("Duplicate upload")),
     abort: vi.fn(),
   }));
-  render(<Documents />);
+  render(<Documents isAdmin={false} />);
   await userEvent.upload(
     screen.getByLabelText("Choose PDF"),
     new File(["%PDF-"], "report.pdf", { type: "application/pdf" }),
@@ -107,11 +107,47 @@ it("shows pending cleanup, recovery action, and read-only external documents", a
     },
   ]);
   const recover = vi.spyOn(service, "recoverDocuments").mockResolvedValue();
-  render(<Documents />);
+  render(<Documents isAdmin={true} />);
   await screen.findByText("external.pdf");
   expect(
     screen.queryByRole("button", { name: "Delete external.pdf" }),
   ).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Retry recovery" }));
   expect(recover).toHaveBeenCalledOnce();
+});
+
+it("hides recovery from non-admins while preserving inventory and deletion", async () => {
+  const list = vi
+    .spyOn(service, "listDocuments")
+    .mockResolvedValueOnce([
+      { ...record, status: "cleanup_required", error: "Cleanup required" },
+      { ...record, doc_id: "doc_" + "b".repeat(64), filename: "ready.pdf" },
+    ])
+    .mockResolvedValue([]);
+  const remove = vi
+    .spyOn(service, "deleteDocument")
+    .mockResolvedValue({ ...record, status: "deleted" });
+  const recover = vi.spyOn(service, "recoverDocuments");
+  render(<Documents isAdmin={false} />);
+
+  expect(await screen.findByText("report.pdf")).toBeInTheDocument();
+  expect(await screen.findByText("ready.pdf")).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Refresh inventory" }),
+  ).toBeEnabled();
+  expect(
+    screen.queryByRole("button", { name: "Retry recovery" }),
+  ).not.toBeInTheDocument();
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Delete ready.pdf" }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Confirm deletion" }),
+  );
+  await waitFor(() =>
+    expect(remove).toHaveBeenCalledWith("doc_" + "b".repeat(64)),
+  );
+  expect(recover).not.toHaveBeenCalled();
+  expect(list).toHaveBeenCalled();
 });

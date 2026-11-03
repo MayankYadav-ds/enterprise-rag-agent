@@ -12,6 +12,8 @@ from rag_agent.api.app import create_app
 from rag_agent.api.dependencies import get_generator_factory, get_retriever
 from rag_agent.api.runtime import DependencyUnavailable
 from rag_agent.api.settings import APISettings
+from rag_agent.auth.models import create_user, ensure_auth_schema
+from rag_agent.auth.password import hash_password
 from rag_agent.generation import AnswerGenerator, ProviderError
 from rag_agent.retrieval.models import RetrievedChunk
 
@@ -36,9 +38,26 @@ def hit(**changes):
     )
 
 
+def _authenticate_test_client(client, runtime, username="runtime-user"):
+    ensure_auth_schema(runtime)
+    with runtime.connection() as conn:
+        create_user(conn, username, hash_password("runtime-test-password-42"), is_admin=True)
+    response = client.post(
+        "/auth/login",
+        headers={"Origin": "http://localhost:5173"},
+        json={"username": username, "password": "runtime-test-password-42"},
+    )
+    assert response.status_code == 200
+    client.headers["X-CSRF-Token"] = response.json()["csrf_token"]
+
+
 @pytest.fixture
-def api():
-    app = create_app(APISettings())
+def api(tmp_path):
+    app = create_app(APISettings(document_dir=tmp_path / "managed"))
+    runtime = app.state.runtime
+    ensure_auth_schema(runtime)
+    with runtime.connection() as conn:
+        create_user(conn, "test-user", hash_password("long-test-password-42"), is_admin=True)
     retriever = Mock(return_value=[hit()])
     provider = Mock()
     provider.complete.return_value = json.dumps(
@@ -52,22 +71,35 @@ def api():
     app.dependency_overrides[get_retriever] = lambda: retriever
     app.dependency_overrides[get_generator_factory] = lambda: factory
     with TestClient(app) as client:
+        login = client.post(
+            "/auth/login",
+            headers={"Origin": "http://localhost:5173"},
+            json={"username": "test-user", "password": "long-test-password-42"},
+        )
+        assert login.status_code == 200
+        cookie_header = login.headers["set-cookie"].lower()
+        assert "httponly" in cookie_header and "samesite=lax" in cookie_header
+        client.headers["X-CSRF-Token"] = login.json()["csrf_token"]
         yield client, retriever, provider, factory
 
 
-def test_health_docs_and_openapi_do_not_initialize_services(monkeypatch):
+def test_health_docs_and_openapi_do_not_initialize_services(monkeypatch, tmp_path):
     def forbidden(*args, **kwargs):
         pytest.fail("health/docs must not initialize external dependencies")
 
     monkeypatch.setattr("rag_agent.api.runtime.QdrantClient", forbidden)
     monkeypatch.setattr("rag_agent.api.runtime.SentenceTransformerEmbedder", forbidden)
     monkeypatch.setattr("rag_agent.api.runtime.build_provider", forbidden)
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(APISettings(document_dir=tmp_path / "managed"))) as client:
         assert client.get("/health").json() == {"status": "ok"}
         assert client.get("/docs").status_code == 200
         schema = client.get("/openapi.json").json()
         assert set(schema["paths"]) == {
             "/health",
+            "/auth/login",
+            "/auth/me",
+            "/auth/csrf",
+            "/auth/logout",
             "/api/v1/query",
             "/api/v1/retrieve",
             "/api/v1/documents",
@@ -269,9 +301,9 @@ def test_malformed_json_and_missing_routes(api):
     assert client.get("/api/v1/query").status_code == 405
 
 
-def test_default_dependencies_call_app_runtime_and_close_it(monkeypatch):
+def test_default_dependencies_call_app_runtime_and_close_it(monkeypatch, tmp_path):
     monkeypatch.setenv("QDRANT_URL", "http://localhost:6333/")
-    app = create_app()
+    app = create_app(APISettings(document_dir=tmp_path / "managed"))
     runtime = app.state.runtime
     retriever = Mock(return_value=[hit()])
     provider = Mock()
@@ -284,6 +316,7 @@ def test_default_dependencies_call_app_runtime_and_close_it(monkeypatch):
     closer = Mock()
     monkeypatch.setattr(runtime, "close", closer)
     with TestClient(app) as client:
+        _authenticate_test_client(client, runtime)
         response = client.post("/api/v1/query", json={"question": "Revenue?"})
         assert response.status_code == 200
         assert response.json()["status"] == "answered"
@@ -292,11 +325,13 @@ def test_default_dependencies_call_app_runtime_and_close_it(monkeypatch):
     closer.assert_called_once()
 
 
-def test_unavailable_qdrant_through_default_runtime_is_503(monkeypatch):
+def test_unavailable_qdrant_through_default_runtime_is_503(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "rag_agent.api.runtime.QdrantClient", Mock(side_effect=ConnectionError("secret-host"))
     )
-    with TestClient(create_app()) as client:
+    app = create_app(APISettings(document_dir=tmp_path / "managed"))
+    with TestClient(app) as client:
+        _authenticate_test_client(client, app.state.runtime)
         response = client.post("/api/v1/retrieve", json={"question": "Revenue?"})
     assert response.status_code == 503
     assert "secret-host" not in response.text

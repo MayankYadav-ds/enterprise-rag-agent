@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 
 class APISettings(BaseModel):
@@ -21,6 +21,34 @@ class APISettings(BaseModel):
     document_max_pages: int = Field(default=500, ge=1, le=5000)
     document_max_chunks: int = Field(default=10000, ge=1, le=100000)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    environment: Literal["development", "test", "production"] = "development"
+    trusted_origins: tuple[str, ...] = (
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    )
+
+    @model_validator(mode="after")
+    def validate_trusted_origins(self) -> "APISettings":
+        for origin in self.trusted_origins:
+            parsed = urlsplit(origin)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+                or parsed.username
+                or parsed.password
+            ):
+                raise ValueError("trusted_origins must contain HTTP(S) origins only")
+        if self.environment == "production" and (
+            not self.trusted_origins
+            or any(urlsplit(origin).scheme != "https" for origin in self.trusted_origins)
+        ):
+            raise ValueError("production requires one or more HTTPS trusted origins")
+        return self
 
     @field_validator("qdrant_url")
     @classmethod
@@ -40,6 +68,11 @@ class APISettings(BaseModel):
 
     @classmethod
     def from_env(cls) -> "APISettings":
+        environment = os.environ.get("RAG_ENV")
+        if environment is None:
+            raise ValueError("RAG_ENV must be explicitly set to development, test, or production")
+        if environment == "production" and "RAG_TRUSTED_ORIGINS" not in os.environ:
+            raise ValueError("production requires RAG_TRUSTED_ORIGINS with HTTPS frontend origins")
         names = {
             "qdrant_url": "QDRANT_URL",
             "qdrant_api_key": "QDRANT_API_KEY",
@@ -51,5 +84,13 @@ class APISettings(BaseModel):
             "document_max_pages": "RAG_DOCUMENT_MAX_PAGES",
             "document_max_chunks": "RAG_DOCUMENT_MAX_CHUNKS",
             "log_level": "RAG_LOG_LEVEL",
+            "environment": "RAG_ENV",
         }
-        return cls(**{key: os.environ[name] for key, name in names.items() if name in os.environ})
+        values = {key: os.environ[name] for key, name in names.items() if name in os.environ}
+        if "RAG_TRUSTED_ORIGINS" in os.environ:
+            values["trusted_origins"] = tuple(
+                origin.strip().rstrip("/")
+                for origin in os.environ["RAG_TRUSTED_ORIGINS"].split(",")
+                if origin.strip()
+            )
+        return cls(**values)

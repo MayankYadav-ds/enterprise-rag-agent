@@ -1,5 +1,8 @@
 """Lazy per-application services and coordinated managed document mutations."""
 
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from threading import RLock
 
 from qdrant_client import QdrantClient
@@ -39,6 +42,19 @@ class Runtime:
         self._generator: AnswerGenerator | None = None
         self._embedder: Embedder | None = None
         self._documents: DocumentManager | None = None
+
+    @contextmanager
+    def connection(self) -> Iterator[sqlite3.Connection]:
+        """Open a short-lived connection to the app's shared local registry DB."""
+        path = self.settings.document_dir / "inventory.sqlite3"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(path, timeout=10)
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def documents(self) -> DocumentManager:
         if self._documents is not None:

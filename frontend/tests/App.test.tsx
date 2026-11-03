@@ -2,27 +2,34 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import App from "../src/App";
+import { setCsrfToken } from "../src/api";
 import { answer } from "./fixtures";
 
 function mockAPI(result: unknown = answer, status = 200) {
-  const fetcher = vi.fn(
-    async (path: string) =>
-      new Response(
-        JSON.stringify(
-          path === "/health"
-            ? { status: "ok" }
-            : path === "/api/v1/documents"
-              ? []
-              : result,
-        ),
-        { status: path === "/health" ? 200 : status },
-      ),
-  );
+  const fetcher = vi.fn(async (path: string) => {
+    const body =
+      path === "/health"
+        ? { status: "ok" }
+        : path === "/auth/me"
+          ? { id: "u1", username: "alice", is_admin: true }
+          : path === "/auth/csrf" || path === "/auth/login"
+            ? { csrf_token: "csrf-test-token" }
+            : path === "/auth/logout"
+              ? { message: "Logged out" }
+              : path === "/api/v1/documents"
+                ? []
+                : result;
+    const responseStatus = path.startsWith("/api/v1/") ? status : 200;
+    return new Response(JSON.stringify(body), { status: responseStatus });
+  });
+  setCsrfToken(null);
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 }
 async function openChat() {
-  await userEvent.click(screen.getByRole("button", { name: "AI workspace" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "AI workspace" }),
+  );
 }
 async function send() {
   await userEvent.type(
@@ -45,7 +52,9 @@ it("shows liveness and honest unavailable corpus statistics", async () => {
 it("opens document upload and the real inventory endpoint", async () => {
   const fetcher = mockAPI();
   render(<App />);
-  await userEvent.click(screen.getByRole("button", { name: "Documents" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Documents" }),
+  );
   expect(screen.getByLabelText("Choose PDF")).toBeEnabled();
   expect(
     await screen.findByText("No indexed or managed documents found."),
@@ -165,7 +174,15 @@ it("prevents blank questions and out-of-range top-k", async () => {
 it("shows backend unavailable on network error", async () => {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+    vi.fn(async (path: string) => {
+      if (path === "/auth/me")
+        return new Response(
+          JSON.stringify({ id: "u1", username: "alice", is_admin: true }),
+        );
+      if (path === "/auth/csrf")
+        return new Response(JSON.stringify({ csrf_token: "csrf-test-token" }));
+      throw new TypeError("Failed to fetch");
+    }),
   );
   render(<App />);
   await waitFor(() =>
