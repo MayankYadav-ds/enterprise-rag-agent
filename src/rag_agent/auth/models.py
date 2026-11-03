@@ -65,10 +65,27 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS login_attempts (
             bucket TEXT PRIMARY KEY,
             window_started REAL NOT NULL,
-            failures INTEGER NOT NULL
+            failures INTEGER NOT NULL,
+            in_flight INTEGER NOT NULL DEFAULT 0,
+            window_id TEXT NOT NULL DEFAULT ''
         );
         """
     )
+    # Upgrade registries created before login reservations were added.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(login_attempts)")}
+    for column, declaration in (
+        ("in_flight", "INTEGER NOT NULL DEFAULT 0"),
+        ("window_id", "TEXT NOT NULL DEFAULT ''"),
+    ):
+        if column not in columns:
+            try:
+                conn.execute(f"ALTER TABLE login_attempts ADD COLUMN {column} {declaration}")
+            except sqlite3.OperationalError:
+                # Another worker may have completed the same startup migration first.
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(login_attempts)")}
+                if column not in columns:
+                    raise
+            columns.add(column)
 
 
 # ---------------------------------------------------------------------------

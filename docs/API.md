@@ -50,6 +50,13 @@ twice and must contain 12 to 1024 characters. For local-console recovery, run
 prompts for the new password and revokes all sessions for the owner. There is no
 web recovery endpoint. Login failures are throttled per direct client address;
 the default is 10 failures per 15 minutes, configurable with the variables below.
+The limiter reserves each in-flight login in a short SQLite `BEGIN IMMEDIATE`
+transaction before password verification, then records failure or clears prior
+failures in a second transaction. SQLite coordinates independent connections
+and workers sharing this local database file; this is not distributed rate
+limiting across hosts or separate databases. Database contention fails closed
+with a temporary service error. Successful authentication clears the peer's
+failure count.
 `RAG_TRUSTED_ORIGINS` is a comma-separated
 allowlist used for login and CSRF-token refresh. Production requires an explicit
 `RAG_TRUSTED_ORIGINS` value containing one or more HTTPS origins; HTTP origins are
