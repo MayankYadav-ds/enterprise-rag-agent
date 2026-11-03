@@ -17,7 +17,8 @@ from rag_agent.auth.models import (
     get_user_by_username,
     set_csrf_hash,
 )
-from rag_agent.auth.password import verify_password
+from rag_agent.auth.password import dummy_password_hash, is_argon2id_hash, verify_password
+from rag_agent.auth.rate_limit import clear_failures, login_bucket, record_failure, retry_after
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -53,11 +54,41 @@ def login(
     if origin is None or origin not in runtime.settings.trusted_origins:
         raise HTTPException(status_code=400, detail="Untrusted Origin")
 
+    bucket = login_bucket(request.client.host if request.client else None)
+    response_data: tuple[str, str] | None = None
+    invalid_credentials = False
+    wait_seconds: int | None = None
     with runtime.connection() as conn:
-        user = get_user_by_username(conn, payload.username)
-        if user is None or not verify_password(user[1], payload.password):
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-        raw_token, csrf_token = create_session(conn, user[0], lifetime=timedelta(hours=8))
+        wait_seconds = retry_after(
+            conn,
+            bucket,
+            window_seconds=runtime.settings.login_rate_limit_window_seconds,
+            limit=runtime.settings.login_rate_limit_attempts,
+        )
+        if wait_seconds is None:
+            user = get_user_by_username(conn, payload.username)
+            password_hash = user[1] if user and is_argon2id_hash(user[1]) else dummy_password_hash()
+            password_valid = verify_password(password_hash, payload.password)
+            if user is None or not password_valid:
+                record_failure(
+                    conn,
+                    bucket,
+                    window_seconds=runtime.settings.login_rate_limit_window_seconds,
+                )
+                invalid_credentials = True
+            else:
+                clear_failures(conn, bucket)
+                response_data = create_session(conn, user[0], lifetime=timedelta(hours=8))
+
+    if wait_seconds is not None:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts",
+            headers={"Retry-After": str(wait_seconds)},
+        )
+    if invalid_credentials or response_data is None:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    raw_token, csrf_token = response_data
 
     response = JSONResponse(status_code=200, content={"csrf_token": csrf_token})
     response.set_cookie(

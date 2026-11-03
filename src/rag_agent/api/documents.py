@@ -23,6 +23,7 @@ from filelock import FileLock, Timeout
 from pydantic import BaseModel
 from qdrant_client.http import models
 
+from rag_agent.api.storage import private_directory, private_file, private_tree
 from rag_agent.chunking.pipeline import chunk_document
 from rag_agent.embeddings.fake import FakeEmbedder
 from rag_agent.embeddings.store import QdrantStore
@@ -92,7 +93,7 @@ class DocumentManager:
     def __init__(self, runtime: Runtime) -> None:
         self.runtime = runtime
         self.root = runtime.settings.document_dir.resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
+        private_directory(self.root)
         self.guard = FileLock(str(self.root / "writer.lock"), thread_local=False)
         try:
             self.guard.acquire(timeout=0)
@@ -123,6 +124,7 @@ class DocumentManager:
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.db, timeout=10)
+        private_file(self.db)
         try:
             with connection:
                 yield connection
@@ -218,6 +220,7 @@ class DocumentManager:
                     if pdf.needs_pass or pdf.page_count > self.runtime.settings.document_max_pages:
                         raise ValueError("Unsupported PDF limits")
                 document, pages = ingest_pdf(file, self.root / doc_id)
+                private_tree(self.root / doc_id)
                 if document.doc_id != doc_id:
                     raise ValueError("Content identity changed")
                 chunks = chunk_document(

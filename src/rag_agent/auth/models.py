@@ -61,6 +61,12 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
             csrf_hash TEXT NOT NULL,
             PRIMARY KEY (session_hash, csrf_hash)
         );
+
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            bucket TEXT PRIMARY KEY,
+            window_started REAL NOT NULL,
+            failures INTEGER NOT NULL
+        );
         """
     )
 
@@ -107,6 +113,28 @@ def get_user_by_id(conn: sqlite3.Connection, user_id: str) -> tuple[str, bool] |
         return None
     username, is_admin_int = row
     return username, bool(is_admin_int)
+
+
+def user_count(conn: sqlite3.Connection) -> int:
+    """Return the account count for a one-time owner bootstrap check."""
+    return int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
+
+
+def reset_owner_password(conn: sqlite3.Connection, username: str, password_hash: str) -> bool:
+    """Reset the named admin password and revoke every session for that account."""
+    if not isinstance(password_hash, str) or not password_hash.startswith("$argon2id$"):
+        raise ValueError("password_hash must be an Argon2id encoded hash")
+    admin_count = int(conn.execute("SELECT COUNT(*) FROM users WHERE is_admin = 1").fetchone()[0])
+    if admin_count != 1:
+        return False
+    row = conn.execute(
+        "SELECT id FROM users WHERE username = ? AND is_admin = 1", (username,)
+    ).fetchone()
+    if row is None:
+        return False
+    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, row[0]))
+    conn.execute("DELETE FROM sessions WHERE user_id = ?", (row[0],))
+    return True
 
 
 # ---------------------------------------------------------------------------

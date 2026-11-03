@@ -22,6 +22,7 @@ from rag_agent.auth.models import (
     get_csrf_hash,
     get_csrf_hashes,
     get_session,
+    reset_owner_password,
 )
 from rag_agent.auth.password import hash_password, verify_password
 
@@ -143,6 +144,118 @@ def test_login_origin_and_generic_credentials(auth_app):
         assert {k: v for k, v in wrong.json().items() if k != "request_id"} == {
             k: v for k, v in missing.json().items() if k != "request_id"
         }
+
+
+def test_unknown_username_uses_argon2_dummy_verification(auth_app, monkeypatch):
+    app, _, _ = auth_app
+    calls = []
+
+    def verify(hash_, password):
+        calls.append((hash_, password))
+        return False
+
+    monkeypatch.setattr("rag_agent.auth.routes.verify_password", verify)
+    with TestClient(app) as client:
+        response = client.post(
+            "/auth/login",
+            headers={"Origin": ORIGIN},
+            json={"username": "unknown", "password": PASSWORD},
+        )
+    assert response.status_code == 401
+    assert calls and calls[0][0].startswith("$argon2id$")
+    assert calls[0][1] == PASSWORD
+
+
+def test_malformed_stored_hash_uses_dummy_verification(auth_app, monkeypatch):
+    app, runtime, _ = auth_app
+    with runtime.connection() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE username = ?", ("legacy-hash", "alice")
+        )
+    calls = []
+    monkeypatch.setattr(
+        "rag_agent.auth.routes.verify_password",
+        lambda hash_, password: calls.append(hash_) or False,
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/auth/login",
+            headers={"Origin": ORIGIN},
+            json={"username": "alice", "password": PASSWORD},
+        )
+    assert response.status_code == 401
+    assert calls and calls[0].startswith("$argon2id$") and calls[0] != "legacy-hash"
+
+
+def test_login_attempts_are_persistently_throttled(tmp_path):
+    settings = APISettings(
+        document_dir=tmp_path / "database",
+        environment="test",
+        login_rate_limit_attempts=2,
+        login_rate_limit_window_seconds=60,
+    )
+    app = create_app(settings)
+    with TestClient(app) as client:
+        headers = {"Origin": ORIGIN}
+        for _ in range(2):
+            assert (
+                client.post(
+                    "/auth/login",
+                    headers=headers,
+                    json={"username": "unknown", "password": PASSWORD},
+                ).status_code
+                == 401
+            )
+        blocked = client.post(
+            "/auth/login",
+            headers=headers,
+            json={"username": "another-unknown", "password": PASSWORD},
+        )
+        assert blocked.status_code == 429
+        assert 1 <= int(blocked.headers["retry-after"]) <= 60
+    # The limiter is stored in the same persistent application SQLite registry.
+    runtime = app.state.runtime
+    with runtime.connection() as conn:
+        assert conn.execute("SELECT failures FROM login_attempts").fetchone() == (2,)
+    runtime.close()
+
+
+def test_owner_password_reset_revokes_all_sessions(auth_app):
+    _, runtime, user_id = auth_app
+    with runtime.connection() as conn:
+        create_user(conn, "ordinary", hash_password(PASSWORD), is_admin=False)
+        first, _ = create_session(conn, user_id)
+        second, _ = create_session(conn, user_id)
+        assert reset_owner_password(conn, "alice", hash_password("new owner password 42"))
+        assert get_session(conn, model_hash_token(first)) is None
+        assert get_session(conn, model_hash_token(second)) is None
+        row = conn.execute(
+            "SELECT password_hash FROM users WHERE username = ?", ("alice",)
+        ).fetchone()
+        assert row and verify_password(row[0], "new owner password 42")
+        assert not reset_owner_password(conn, "missing", hash_password("new owner password 42"))
+        assert not reset_owner_password(conn, "ordinary", hash_password("new owner password 42"))
+
+
+def test_owner_bootstrap_refuses_existing_accounts(tmp_path, monkeypatch):
+    from rag_agent.api.runtime import Runtime
+
+    managed = tmp_path / "managed"
+    monkeypatch.setenv("RAG_DOCUMENT_DIR", str(managed))
+    monkeypatch.setenv("RAG_ENV", "test")
+    runtime = Runtime(APISettings(document_dir=managed))
+    ensure_auth_schema(runtime)
+    with runtime.connection() as conn:
+        create_user(conn, "existing", hash_password(PASSWORD), is_admin=True)
+    runtime.close()
+
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["create_user.py", "second", "--admin"])
+    answers = iter([PASSWORD, PASSWORD])
+    monkeypatch.setattr("getpass.getpass", lambda _prompt: next(answers))
+    with pytest.raises(SystemExit):
+        create_user_command()
 
 
 def test_cookie_flags_me_and_csrf_token_hash(authenticated):
